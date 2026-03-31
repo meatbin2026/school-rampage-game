@@ -1983,7 +1983,7 @@ const CONFIG = {
   spawnInterval: 2000,
   rageDuration: 5000,
   rageCooldown: 15000,
-  comboTimeout: 3000,
+  comboTimeout: 3000, // 连击超时时间（3秒）
   maxEnemies: 100,
   bossSpawnInterval: 180000, // 3分钟刷一次Boss
   difficultyScaling: 0.06, // 难度递增系数（降低从0.08）
@@ -2000,6 +2000,58 @@ const CONFIG = {
     enabled: true,
     duration: 30000, // 前30秒减伤
     damageReduction: 0.5 // 50%减伤
+  },
+  
+  // v1.6 新增：连击系统配置
+  comboSystem: {
+    enabled: true,
+    timeout: 3000, // 连击超时时间（毫秒）
+    bonusExp: { // 连击经验加成
+      5: 0.1,   // 5连击 +10%经验
+      10: 0.2,  // 10连击 +20%经验
+      20: 0.35, // 20连击 +35%经验
+      50: 0.5,  // 50连击 +50%经验
+      100: 1.0  // 100连击 +100%经验
+    }
+  },
+  
+  // v1.6 新增：双武器系统
+  dualWeapon: {
+    enabled: true,
+    switchCooldown: 500 // 武器切换冷却（毫秒）
+  },
+  
+  // v1.6 新增：击退系统
+  knockback: {
+    enabled: true,
+    baseForce: 30, // 基础击退距离
+    scaling: 0.5   // 随伤害缩放
+  },
+  
+  // v1.7 新增：特殊波次配置
+  specialWaves: {
+    enabled: true,
+    eliteWaveInterval: 5,    // 每5波一次精英波
+    speedWaveInterval: 7,    // 每7波一次速度波
+    tankWaveInterval: 11,    // 每11波一次坦克波
+    chaosWaveInterval: 13    // 每13波一次混乱波
+  },
+  
+  // v1.7 新增：里程碑奖励
+  milestones: {
+    enabled: true,
+    waves: [50, 100], // 里程碑波次
+    rewards: {
+      50: { type: 'character', id: 'transfer', name: '转校生' },
+      100: { type: 'title', id: 'legend', name: '校园传说' }
+    }
+  },
+  
+  // v1.7 新增：可破坏物体
+  destructibles: {
+    enabled: true,
+    spawnRate: 0.15, // 生成概率
+    types: ['desk', 'trash', 'hoop', 'locker']
   }
 };
 
@@ -2627,34 +2679,59 @@ const WEAPONS = {
     maxLevel: 8,
     description: '试卷席卷全场'
   },
-  // 新武器
+  // 新武器 - v1.6 平衡调整
   lunchBox: {
     name: '饭盒重击',
     emoji: '🍱',
-    damage: 2.5,
-    speed: 0.7,
+    damage: 2.2,
+    speed: 0.75,
     stun: true,
+    stunChance: 0.35, // 增加眩晕概率
+    splashRange: 60,  // 添加溅射范围
     maxLevel: 5,
-    description: '饭盒砸击，有概率眩晕敌人'
+    description: '饭盒砸击，35%概率眩晕，有小范围溅射'
   },
   waterBalloon: {
     name: '水球乱斗',
     emoji: '🎈',
-    damage: 1.2,
-    speed: 1.3,
+    damage: 1.0,
+    speed: 1.2,
     slow: true,
+    slowAmount: 0.4,
+    slowDuration: 2000,
     maxLevel: 5,
-    description: '水球减速敌人'
+    description: '水球减速敌人40%，持续2秒'
   },
   firecracker: {
     name: '鞭炮轰炸',
     emoji: '🧨',
-    damage: 4,
-    speed: 0.4,
+    damage: 3.5,
+    speed: 0.45,
     explode: true,
     aoe: true,
     maxLevel: 5,
     description: '高伤害范围爆炸'
+  },
+  // v1.6 新增武器 - 激光笔（削弱后）
+  laser: {
+    name: '激光笔',
+    emoji: '🔦',
+    damage: 1.2,
+    speed: 2.0,
+    pierce: 2, // 降低穿透次数
+    maxLevel: 5,
+    description: '高速穿透激光，穿透2个敌人'
+  },
+  // v1.6 新增武器 - 冰棒（冰冻效果）
+  iceStick: {
+    name: '冰棒投掷',
+    emoji: '🍦',
+    damage: 1.0,
+    speed: 1.1,
+    freeze: true,
+    freezeDuration: 1500,
+    maxLevel: 5,
+    description: '冰冻敌人1.5秒'
   }
 };
 
@@ -2907,11 +2984,38 @@ let gameState = {
   waveStartTime: 0,
   nextWaveTime: CONFIG.waveInterval,
   
+  // v1.7 新增：特殊波次状态
+  specialWave: {
+    active: false,
+    type: null, // 'elite', 'speed', 'tank', 'chaos'
+    startTime: 0,
+    notified: false
+  },
+  
   // Boss系统
   boss: null,
   bossDefeated: [],
   hazardZones: [],
   bossFightActive: false,
+  
+  // v1.6 新增：连击系统
+  combo: {
+    count: 0,
+    lastKillTime: 0,
+    maxCombo: 0,
+    bonusMultiplier: 1
+  },
+  
+  // v1.6 新增：双武器系统
+  dualWeapon: {
+    primary: null,    // 主武器ID
+    secondary: null,  // 副武器ID
+    current: 'primary', // 当前使用的武器
+    lastSwitchTime: 0
+  },
+  
+  // v1.7 新增：可破坏物体
+  destructibles: [],
   
   // 统计
   kills: 0,
@@ -2924,7 +3028,10 @@ let gameState = {
   noDamageRun: true,
   eliteKills: 0,
   bomberKills: 0,
-  timeFreezes: 0
+  timeFreezes: 0,
+  
+  // v1.7 新增：里程碑记录
+  milestonesReached: []
 };
 
 // 输入状态
@@ -2954,6 +3061,7 @@ function init() {
     keys[e.code] = true;
     if (e.code === 'KeyP') togglePause();
     if (e.code === 'Space') activateRage();
+    if (e.code === 'KeyQ') switchWeapon(); // v1.6 双武器切换
   });
   
   window.addEventListener('keyup', e => keys[e.code] = false);
@@ -3669,6 +3777,119 @@ function createBullet(x, y, angle, weapon, orbit = false, weaponId = null) {
   return createSingleBullet(x, y, angle, weapon, orbit, weaponId);
 }
 
+// ==================== v1.6 双武器系统 ====================
+function switchWeapon() {
+  if (!CONFIG.dualWeapon.enabled) return;
+  
+  const dual = gameState.dualWeapon;
+  const now = Date.now();
+  
+  // 检查冷却
+  if (now - dual.lastSwitchTime < CONFIG.dualWeapon.switchCooldown) {
+    return;
+  }
+  
+  // 检查是否有副武器
+  if (!dual.secondary) {
+    FloatingText.add(gameState.player.x, gameState.player.y - 30, '没有副武器!', '#ff3838', 14);
+    return;
+  }
+  
+  // 切换武器
+  dual.current = dual.current === 'primary' ? 'secondary' : 'primary';
+  dual.lastSwitchTime = now;
+  
+  // 显示切换提示
+  const weaponName = WEAPONS[getCurrentWeaponId()].name;
+  FloatingText.add(gameState.player.x, gameState.player.y - 40, `切换: ${weaponName}`, '#2ed573', 16);
+  
+  // 播放切换音效
+  AudioSystem.play('weapon_switch');
+}
+
+function getCurrentWeaponId() {
+  const dual = gameState.dualWeapon;
+  if (!CONFIG.dualWeapon.enabled || !dual.primary) {
+    // 返回第一个已解锁的武器
+    for (const [id, data] of Object.entries(gameState.weapons)) {
+      if (data.unlocked && data.level > 0) {
+        return id;
+      }
+    }
+    return 'textbook';
+  }
+  return dual.current === 'primary' ? dual.primary : dual.secondary;
+}
+
+function setPrimaryWeapon(weaponId) {
+  if (!gameState.weapons[weaponId]?.unlocked) return;
+  
+  const dual = gameState.dualWeapon;
+  
+  // 如果当前副武器和新主武器相同，交换
+  if (dual.secondary === weaponId) {
+    dual.secondary = dual.primary;
+  }
+  
+  dual.primary = weaponId;
+  dual.current = 'primary';
+}
+
+function setSecondaryWeapon(weaponId) {
+  if (!gameState.weapons[weaponId]?.unlocked) return;
+  
+  const dual = gameState.dualWeapon;
+  
+  // 不能和主武器相同
+  if (dual.primary === weaponId) {
+    FloatingText.add(gameState.player.x, gameState.player.y - 30, '已是主武器!', '#ff3838', 14);
+    return false;
+  }
+  
+  dual.secondary = weaponId;
+  FloatingText.add(gameState.player.x, gameState.player.y - 40, `副武器: ${WEAPONS[weaponId].name}`, '#2ed573', 14);
+  return true;
+}
+
+// ==================== v1.6 击退系统 ====================
+function applyKnockback(enemy, bullet, angle) {
+  if (!CONFIG.knockback.enabled) return;
+  
+  // 计算击退力
+  const baseForce = CONFIG.knockback.baseForce;
+  const damageScaling = CONFIG.knockback.scaling;
+  const knockbackForce = baseForce + (bullet.damage * damageScaling);
+  
+  // 应用击退
+  enemy.x += Math.cos(angle) * knockbackForce;
+  enemy.y += Math.sin(angle) * knockbackForce;
+  
+  // 添加击退状态（影响敌人AI）
+  enemy.knockback = {
+    vx: Math.cos(angle) * knockbackForce * 0.5,
+    vy: Math.sin(angle) * knockbackForce * 0.5,
+    duration: 200 // 毫秒
+  };
+  enemy.knockbackEndTime = Date.now() + 200;
+}
+
+function updateEnemyKnockback(enemy, deltaTime) {
+  if (!enemy.knockbackEndTime || Date.now() > enemy.knockbackEndTime) {
+    enemy.knockback = null;
+    return;
+  }
+  
+  // 应用击退速度
+  if (enemy.knockback) {
+    enemy.x += enemy.knockback.vx * deltaTime;
+    enemy.y += enemy.knockback.vy * deltaTime;
+    
+    // 击退速度衰减
+    enemy.knockback.vx *= 0.9;
+    enemy.knockback.vy *= 0.9;
+  }
+}
+
 function createSingleBullet(x, y, angle, weapon, orbit = false, weaponId = null) {
   // 获取武器精通加成
   const masteryBonuses = weaponId ? WeaponMastery.getBonuses(weaponId) : { damage: 1, speed: 1, pierce: 0, critChance: 0 };
@@ -4066,6 +4287,7 @@ function updateEnemySpawning(deltaTime) {
   updateWaveSystem();
 }
 
+// ==================== v1.7 特殊波次系统 ====================
 function updateWaveSystem() {
   const gameTime = Date.now() - gameState.startTime;
   
@@ -4077,15 +4299,174 @@ function updateWaveSystem() {
     if (BOSS_SPAWN_WAVES.includes(gameState.wave)) {
       showWaveNotification(gameState.wave, true);
     } else {
-      // 普通波次提升提示
-      showWaveNotification(gameState.wave, false);
+      // v1.7 检查特殊波次
+      const specialWaveType = checkSpecialWave(gameState.wave);
+      if (specialWaveType && CONFIG.specialWaves.enabled) {
+        startSpecialWave(specialWaveType);
+      } else {
+        // 普通波次提升提示
+        showWaveNotification(gameState.wave, false);
+      }
     }
     
-    // 每3波给一个奖励（Boss波次除外）
-    if (gameState.wave % 3 === 0 && !BOSS_SPAWN_WAVES.includes(gameState.wave)) {
+    // v1.7 检查里程碑
+    checkMilestones();
+    
+    // 每3波给一个奖励（Boss波次和特殊波次除外）
+    if (gameState.wave % 3 === 0 && !BOSS_SPAWN_WAVES.includes(gameState.wave) && !gameState.specialWave.active) {
       spawnWaveReward();
     }
   }
+}
+
+function checkSpecialWave(wave) {
+  const cfg = CONFIG.specialWaves;
+  if (!cfg.enabled) return null;
+  
+  // 检查各类特殊波次
+  if (wave % cfg.eliteWaveInterval === 0 && wave > 5) return 'elite';
+  if (wave % cfg.speedWaveInterval === 0 && wave > 7) return 'speed';
+  if (wave % cfg.tankWaveInterval === 0 && wave > 10) return 'tank';
+  if (wave % cfg.chaosWaveInterval === 0 && wave > 13) return 'chaos';
+  
+  return null;
+}
+
+function startSpecialWave(type) {
+  const specialWave = gameState.specialWave;
+  specialWave.active = true;
+  specialWave.type = type;
+  specialWave.startTime = Date.now();
+  specialWave.notified = false;
+  
+  // 显示特殊波次通知
+  showSpecialWaveNotification(type);
+  
+  // 播放特殊音效
+  AudioSystem.play('special_wave');
+}
+
+function showSpecialWaveNotification(type) {
+  const configs = {
+    elite: { emoji: '👑', name: '精英波次', color: '#ffd700', desc: '全是精英怪!' },
+    speed: { emoji: '⚡', name: '速度波次', color: '#00d2ff', desc: '敌人速度翻倍!' },
+    tank: { emoji: '🛡️', name: '坦克波次', color: '#ff6b6b', desc: '敌人血量翻倍!' },
+    chaos: { emoji: '🔥', name: '混乱波次', color: '#ff3838', desc: '所有敌人类型混合!' }
+  };
+  
+  const config = configs[type];
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 25%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 40px;
+    font-weight: 900;
+    color: ${config.color};
+    text-shadow: 0 0 30px ${config.color}, 0 0 60px #fff;
+    pointer-events: none;
+    z-index: 1000;
+    animation: specialWaveWarning 4s ease-out forwards;
+    text-align: center;
+  `;
+  notification.innerHTML = `
+    <div style="font-size:60px;margin-bottom:10px">${config.emoji}</div>
+    <div>第 ${gameState.wave} 波 - ${config.name}!</div>
+    <div style="font-size:18px;color:#fff;margin-top:10px">${config.desc}</div>
+  `;
+  
+  document.body.appendChild(notification);
+  setTimeout(() => notification.remove(), 4000);
+  
+  // 屏幕震动
+  ScreenShake.shake(8, 500);
+}
+
+function updateSpecialWave() {
+  const specialWave = gameState.specialWave;
+  if (!specialWave.active) return;
+  
+  // 特殊波次持续60秒或直到下一波
+  const elapsed = Date.now() - specialWave.startTime;
+  if (elapsed > 60000) {
+    endSpecialWave();
+  }
+}
+
+function endSpecialWave() {
+  const specialWave = gameState.specialWave;
+  if (!specialWave.active) return;
+  
+  // 显示波次结束提示
+  FloatingText.add(gameState.player.x, gameState.player.y - 60, 
+    '特殊波次完成!', '#2ed573', 22);
+  
+  // 奖励经验
+  const bonusExp = 50 * gameState.wave;
+  gameState.player.exp += bonusExp;
+  checkLevelUp();
+  
+  specialWave.active = false;
+  specialWave.type = null;
+}
+
+// ==================== v1.7 里程碑系统 ====================
+function checkMilestones() {
+  if (!CONFIG.milestones.enabled) return;
+  
+  const wave = gameState.wave;
+  const milestones = CONFIG.milestones.waves;
+  
+  if (milestones.includes(wave) && !gameState.milestonesReached.includes(wave)) {
+    gameState.milestonesReached.push(wave);
+    grantMilestoneReward(wave);
+  }
+}
+
+function grantMilestoneReward(wave) {
+  const reward = CONFIG.milestones.rewards[wave];
+  if (!reward) return;
+  
+  // 显示里程碑达成
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 30px 50px;
+    border-radius: 20px;
+    box-shadow: 0 0 50px rgba(102, 126, 234, 0.8);
+    pointer-events: none;
+    z-index: 2000;
+    animation: milestonePopup 5s ease-out forwards;
+    text-align: center;
+  `;
+  notification.innerHTML = `
+    <div style="font-size:24px;color:#fff;margin-bottom:10px">🏆 里程碑达成!</div>
+    <div style="font-size:48px;color:#ffd700;font-weight:900">${wave}波</div>
+    <div style="font-size:20px;color:#fff;margin-top:15px">解锁: ${reward.name}</div>
+  `;
+  
+  document.body.appendChild(notification);
+  setTimeout(() => notification.remove(), 5000);
+  
+  // 应用奖励
+  if (reward.type === 'character') {
+    // 解锁隐藏角色
+    FloatingText.add(gameState.player.x, gameState.player.y - 80, 
+      `解锁角色: ${reward.name}!`, '#ffd700', 24);
+  } else if (reward.type === 'title') {
+    // 授予称号
+    FloatingText.add(gameState.player.x, gameState.player.y - 80, 
+      `获得称号: ${reward.name}!`, '#ffd700', 24);
+  }
+  
+  // 播放庆祝音效
+  AudioSystem.play('milestone');
+  ScreenShake.shake(10, 1000);
 }
 
 function showWaveNotification(wave, isBossWave) {
@@ -4157,6 +4538,7 @@ function spawnWaveReward() {
   showFloatingText(x, y, '波次奖励!', '#ffd93d');
 }
 
+// v1.7 修改：支持特殊波次的敌人生成
 function spawnEnemy(difficultyMultiplier = 1) {
   if (gameState.enemies.length >= CONFIG.maxEnemies) return;
   
@@ -4170,30 +4552,65 @@ function spawnEnemy(difficultyMultiplier = 1) {
   const level = player.level;
   const wave = gameState.wave;
   
-  // 基础类型选择
-  if (level > 3 && rand < 0.25) type = 'runner';
-  if (level > 7 && rand < 0.15) type = 'tank';
+  // v1.7 特殊波次处理
+  const specialWave = gameState.specialWave;
+  let isElite = Math.random() < CONFIG.eliteChance * difficultyMultiplier;
+  let eliteMultiplier = isElite ? 2 : 1;
+  let speedMultiplier = 1;
+  let hpMultiplier = 1;
   
-  // 高级敌人类型（需要更高等级和波次）
-  if (wave >= 2 && level > 5 && rand < 0.08) type = 'bomber';
-  if (wave >= 3 && level > 8 && rand < 0.06) type = 'healer';
-  if (wave >= 4 && level > 10 && rand < 0.05) type = 'teleporter';
+  if (specialWave.active) {
+    switch (specialWave.type) {
+      case 'elite':
+        // 精英波：全是精英怪
+        isElite = true;
+        eliteMultiplier = 2.5;
+        break;
+      case 'speed':
+        // 速度波：速度翻倍
+        speedMultiplier = 2;
+        // 优先生成速度型敌人
+        if (rand < 0.6) type = 'runner';
+        break;
+      case 'tank':
+        // 坦克波：血量翻倍
+        hpMultiplier = 2;
+        // 优先生成坦克型敌人
+        if (rand < 0.5) type = 'tank';
+        break;
+      case 'chaos':
+        // 混乱波：随机混合所有类型
+        const types = ['minion', 'runner', 'tank', 'bomber', 'healer', 'teleporter'];
+        type = types[Math.floor(Math.random() * types.length)];
+        // 小幅增强
+        speedMultiplier = 1.3;
+        hpMultiplier = 1.3;
+        break;
+    }
+  }
+  
+  // 基础类型选择（非混乱波）
+  if (specialWave.type !== 'chaos') {
+    if (level > 3 && rand < 0.25) type = 'runner';
+    if (level > 7 && rand < 0.15) type = 'tank';
+    
+    // 高级敌人类型（需要更高等级和波次）
+    if (wave >= 2 && level > 5 && rand < 0.08) type = 'bomber';
+    if (wave >= 3 && level > 8 && rand < 0.06) type = 'healer';
+    if (wave >= 4 && level > 10 && rand < 0.05) type = 'teleporter';
+  }
   
   const enemyType = ENEMY_TYPES[type];
-  
-  // 精英怪判定
-  const isElite = Math.random() < CONFIG.eliteChance * difficultyMultiplier;
-  const eliteMultiplier = isElite ? 2 : 1;
   
   const enemy = {
     x: player.x + Math.cos(angle) * distance,
     y: player.y + Math.sin(angle) * distance,
     type,
-    hp: enemyType.hp * (1 + level * CONFIG.difficultyScaling) * difficultyMultiplier * eliteMultiplier,
-    maxHp: enemyType.hp * (1 + level * CONFIG.difficultyScaling) * difficultyMultiplier * eliteMultiplier,
+    hp: enemyType.hp * (1 + level * CONFIG.difficultyScaling) * difficultyMultiplier * eliteMultiplier * hpMultiplier,
+    maxHp: enemyType.hp * (1 + level * CONFIG.difficultyScaling) * difficultyMultiplier * eliteMultiplier * hpMultiplier,
     damage: enemyType.damage * difficultyMultiplier * (isElite ? 1.5 : 1),
-    speed: enemyType.speed * CONFIG.enemyBaseSpeed * (isElite ? 1.2 : 1),
-    exp: Math.floor(enemyType.exp * difficultyMultiplier * (isElite ? 2 : 1)),
+    speed: enemyType.speed * CONFIG.enemyBaseSpeed * (isElite ? 1.2 : 1) * speedMultiplier,
+    exp: Math.floor(enemyType.exp * difficultyMultiplier * (isElite ? 2 : 1) * (specialWave.active ? 1.5 : 1)),
     size: enemyType.size * (isElite ? 1.3 : 1),
     isElite,
     color: enemyType.color,
@@ -4211,7 +4628,23 @@ function spawnEnemy(difficultyMultiplier = 1) {
     enemy.name = '精英' + enemyType.name;
   }
   
+  // 特殊波次视觉标记
+  if (specialWave.active) {
+    enemy.specialWave = true;
+    enemy.glowColor = getSpecialWaveColor(specialWave.type);
+  }
+  
   gameState.enemies.push(enemy);
+}
+
+function getSpecialWaveColor(type) {
+  const colors = {
+    elite: '#ffd700',
+    speed: '#00d2ff',
+    tank: '#ff6b6b',
+    chaos: '#ff3838'
+  };
+  return colors[type] || '#fff';
 }
 
 function spawnEnemyAt(x, y, type) {
@@ -4227,6 +4660,122 @@ function spawnEnemyAt(x, y, type) {
     exp: enemyType.exp,
     size: enemyType.size
   });
+}
+
+// ==================== v1.7 可破坏物体系统 ====================
+const DESTRUCTIBLE_TYPES = {
+  desk: {
+    name: '课桌',
+    emoji: '🪑',
+    hp: 50,
+    exp: 15,
+    size: 40,
+    color: '#8b4513'
+  },
+  trash: {
+    name: '垃圾桶',
+    emoji: '🗑️',
+    hp: 30,
+    exp: 10,
+    size: 35,
+    color: '#2ecc71'
+  },
+  hoop: {
+    name: '篮球架',
+    emoji: '🏀',
+    hp: 80,
+    exp: 25,
+    size: 50,
+    color: '#e67e22'
+  },
+  locker: {
+    name: '储物柜',
+    emoji: '🚪',
+    hp: 60,
+    exp: 20,
+    size: 45,
+    color: '#3498db'
+  }
+};
+
+function spawnDestructible() {
+  if (!CONFIG.destructibles.enabled) return;
+  if (Math.random() > CONFIG.destructibles.spawnRate) return;
+  
+  const player = gameState.player;
+  const angle = Math.random() * Math.PI * 2;
+  const distance = 300 + Math.random() * 400;
+  
+  const types = CONFIG.destructibles.types;
+  const type = types[Math.floor(Math.random() * types.length)];
+  const config = DESTRUCTIBLE_TYPES[type];
+  
+  gameState.destructibles.push({
+    x: player.x + Math.cos(angle) * distance,
+    y: player.y + Math.sin(angle) * distance,
+    type,
+    hp: config.hp,
+    maxHp: config.hp,
+    exp: config.exp,
+    size: config.size,
+    emoji: config.emoji,
+    color: config.color,
+    destroyed: false
+  });
+}
+
+function updateDestructibles(deltaTime) {
+  // 生成新的可破坏物体
+  if (gameState.destructibles.length < 10 && Math.random() < 0.01) {
+    spawnDestructible();
+  }
+  
+  // 移除已销毁的物体
+  gameState.destructibles = gameState.destructibles.filter(d => !d.destroyed);
+}
+
+function damageDestructible(destructible, damage) {
+  destructible.hp -= damage;
+  
+  // 受击特效
+  VisualEffects.createExplosion(destructible.x, destructible.y, destructible.color, 5);
+  
+  if (destructible.hp <= 0) {
+    destroyDestructible(destructible);
+  }
+}
+
+function destroyDestructible(destructible) {
+  destructible.destroyed = true;
+  
+  const config = DESTRUCTIBLE_TYPES[destructible.type];
+  
+  // 爆炸特效
+  VisualEffects.createExplosion(destructible.x, destructible.y, destructible.color, 15);
+  ScreenShake.shake(3, 150);
+  
+  // 掉落经验
+  gameState.expOrbs.push({
+    x: destructible.x,
+    y: destructible.y,
+    exp: config.exp,
+    vx: (Math.random() - 0.5) * 3,
+    vy: (Math.random() - 0.5) * 3
+  });
+  
+  // 随机掉落道具（30%概率）
+  if (Math.random() < 0.3) {
+    const items = ['healthPack', 'magnet', 'shield'];
+    const item = items[Math.floor(Math.random() * items.length)];
+    spawnItem(destructible.x, destructible.y, item);
+  }
+  
+  // 飘字
+  FloatingText.add(destructible.x, destructible.y - 20, `+${config.exp} XP`, '#2ed573', 14);
+  FloatingText.add(destructible.x, destructible.y - 40, '破坏!', '#ffa502', 16);
+  
+  // 音效
+  AudioSystem.play('destructible_break');
 }
 
 // ==================== Boss系统 ====================
@@ -4956,13 +5505,25 @@ function killEnemy(enemy, weaponId) {
   // 增加怒气（精英怪给更多）
   addRage(enemy.isElite ? 15 : 5);
   
-  // 连击
-  gameState.player.combo++;
-  gameState.player.comboLastTime = Date.now();
-  if (gameState.player.combo > gameState.maxCombo) {
-    gameState.maxCombo = gameState.player.combo;
+  // v1.6 增强连击系统
+  updateComboSystem();
+  
+  // 应用连击经验加成
+  const comboBonus = getComboExpBonus();
+  if (comboBonus > 0) {
+    const bonusExp = Math.floor(enemy.exp * comboBonus);
+    if (bonusExp > 0) {
+      gameState.expOrbs.push({
+        x: enemy.x + (Math.random() - 0.5) * 40,
+        y: enemy.y + (Math.random() - 0.5) * 40,
+        exp: bonusExp,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2,
+        isBonus: true
+      });
+      FloatingText.add(enemy.x, enemy.y - 40, `+${bonusExp} 连击奖励!`, '#ffa502', 12);
+    }
   }
-  showCombo();
   
   // 暴走击杀统计
   if (gameState.player.rageActive) {
@@ -5347,21 +5908,107 @@ function updateParticles(deltaTime) {
   BackgroundEffects.update();
 }
 
-// ==================== 连击系统 ====================
+// ==================== v1.6 增强连击系统 ====================
+function updateComboSystem() {
+  const now = Date.now();
+  const combo = gameState.combo;
+  
+  // 检查连击是否中断
+  if (combo.count > 0 && now - combo.lastKillTime > CONFIG.comboSystem.timeout) {
+    // 连击中断，记录最高连击
+    if (combo.count > combo.maxCombo) {
+      combo.maxCombo = combo.count;
+    }
+    // 显示连击结束
+    if (combo.count >= 10) {
+      FloatingText.add(gameState.player.x, gameState.player.y - 50, 
+        `连击结束! ${combo.count}`, '#ffa502', 18);
+    }
+    combo.count = 0;
+    combo.bonusMultiplier = 1;
+    document.getElementById('comboDisplay')?.classList.remove('active');
+  }
+  
+  // 增加连击数
+  combo.count++;
+  combo.lastKillTime = now;
+  
+  // 更新最高连击
+  if (combo.count > combo.maxCombo) {
+    combo.maxCombo = combo.count;
+    gameState.maxCombo = combo.count;
+  }
+  
+  // 计算连击加成
+  combo.bonusMultiplier = 1 + getComboExpBonus();
+  
+  // 显示连击UI
+  showComboUI();
+  
+  // 连击里程碑提示
+  const milestones = [10, 20, 50, 100];
+  if (milestones.includes(combo.count)) {
+    FloatingText.add(gameState.player.x, gameState.player.y - 60, 
+      `${combo.count} 连击! 🔥`, '#ff3838', 24);
+    ScreenShake.shake(3, 200);
+    AudioSystem.play('combo_milestone');
+  }
+}
+
+function getComboExpBonus() {
+  const count = gameState.combo.count;
+  const bonuses = CONFIG.comboSystem.bonusExp;
+  
+  // 从最高档向下匹配
+  const thresholds = Object.keys(bonuses).map(Number).sort((a, b) => b - a);
+  for (const threshold of thresholds) {
+    if (count >= threshold) {
+      return bonuses[threshold];
+    }
+  }
+  return 0;
+}
+
+function showComboUI() {
+  const display = document.getElementById('comboDisplay');
+  if (!display) return;
+  
+  const count = gameState.combo.count;
+  if (count >= 5) {
+    const bonus = Math.floor(getComboExpBonus() * 100);
+    display.innerHTML = `<span class="combo-count">x${count}</span> <span class="combo-bonus">+${bonus}%EXP</span>`;
+    display.classList.add('active');
+    
+    // 根据连击数改变颜色
+    if (count >= 100) {
+      display.style.color = '#ff3838';
+      display.style.textShadow = '0 0 20px #ff3838';
+    } else if (count >= 50) {
+      display.style.color = '#ffa502';
+      display.style.textShadow = '0 0 15px #ffa502';
+    } else if (count >= 20) {
+      display.style.color = '#2ed573';
+      display.style.textShadow = '0 0 10px #2ed573';
+    }
+  }
+}
+
+// 旧函数兼容（保持原有调用）
 function updateCombo(deltaTime) {
-  const player = gameState.player;
-  if (player.combo > 0 && Date.now() - player.comboLastTime > CONFIG.comboTimeout) {
-    player.combo = 0;
-    document.getElementById('comboDisplay').classList.remove('active');
+  // 新版连击系统已在killEnemy中处理
+  const combo = gameState.combo;
+  if (combo.count > 0 && Date.now() - combo.lastKillTime > CONFIG.comboSystem.timeout) {
+    if (combo.count > combo.maxCombo) {
+      combo.maxCombo = combo.count;
+    }
+    combo.count = 0;
+    combo.bonusMultiplier = 1;
+    document.getElementById('comboDisplay')?.classList.remove('active');
   }
 }
 
 function showCombo() {
-  const display = document.getElementById('comboDisplay');
-  if (gameState.player.combo >= 5) {
-    display.textContent = `x${gameState.player.combo} 连击!`;
-    display.classList.add('active');
-  }
+  // 新版由updateComboSystem处理
 }
 
 // ==================== 渲染 ====================
