@@ -106,6 +106,36 @@
       50% { opacity: 0.7; }
     }
 
+    @keyframes wavePulse {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    }
+
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    @keyframes effectPulse {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    }
+
+    @keyframes bossWarning {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+    }
+
+    @keyframes floatUp {
+      0% { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-50px); opacity: 0; }
+    }
+
     .stat-value {
       font-size: 12px;
       font-weight: 600;
@@ -751,6 +781,7 @@
     
     <div class="hud-right">
       <div class="pill level-pill" id="levelPill">Lv.1</div>
+      <div class="pill" id="wavePill" style="background: linear-gradient(135deg, #5f27cd, #341f97);">第1波</div>
       <div class="pill" id="timePill">00:00</div>
       <div class="pill" id="killPill">击败: 0</div>
       <button class="pill btn" id="pauseBtn">暂停</button>
