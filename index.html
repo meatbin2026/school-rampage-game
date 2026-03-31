@@ -689,6 +689,65 @@
       100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
     }
     
+    /* 阶段切换动画 */
+    @keyframes phaseChange {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+      30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+      70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    }
+    
+    /* 奖励飘浮动画 */
+    @keyframes rewardFloat {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -120%) scale(0.9); opacity: 0; }
+    }
+    
+    /* 胜利弹窗动画 */
+    @keyframes victoryPopup {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+    }
+    
+    /* 武器升级动画 */
+    @keyframes weaponLevelUp {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+    }
+    
+    /* 武器解锁动画 */
+    @keyframes weaponUnlock {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.95); opacity: 0; }
+    }
+    
+    /* 天赋解锁动画 */
+    @keyframes talentUnlock {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+    }
+    
+    /* 排行榜排名弹窗动画 */
+    @keyframes rankPopup {
+      0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+      30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+      70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+    }
+    
     .save-info {
       font-size: 14px;
       color: var(--text-dim);
@@ -696,6 +755,131 @@
     
     .save-info strong {
       color: var(--accent);
+    }
+    
+    /* 版本显示 */
+    .version-display {
+      position: fixed;
+      bottom: 10px;
+      right: 15px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      z-index: 100;
+      cursor: pointer;
+      transition: all 0.3s;
+      user-select: none;
+    }
+    
+    .version-display:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
+    
+    /* 更新日志弹窗 */
+    .changelog-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+      backdrop-filter: blur(5px);
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+    
+    .changelog-content {
+      background: var(--bg-card);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 450px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      border: 2px solid var(--accent);
+      animation: slideUp 0.4s ease;
+    }
+    
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    
+    .changelog-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .changelog-header h2 {
+      font-size: 22px;
+      color: var(--accent);
+      margin: 0;
+    }
+    
+    .changelog-date {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    
+    .changelog-body h3 {
+      font-size: 16px;
+      color: var(--text);
+      margin-bottom: 15px;
+    }
+    
+    .changelog-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .changelog-list li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: var(--text-dim);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    
+    .changelog-list li:last-child {
+      border-bottom: none;
+    }
+    
+    .changelog-close {
+      width: 100%;
+      padding: 12px;
+      margin-top: 20px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .changelog-close:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(255, 71, 87, 0.4);
     }
   </style>
 </head>
@@ -740,6 +924,12 @@
     </div>
     
     <button class="start-btn" id="startBtn">开始游戏</button>
+    
+    <!-- 版本信息 -->
+    <div class="version-info" style="margin: 15px 0; font-size: 14px; color: var(--text-dim); cursor: pointer;" onclick="VersionManager.showChangelog()">
+      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.0</strong></span>
+      <span style="margin-left: 10px; font-size: 12px; opacity: 0.6;">点击查看更新日志</span>
+    </div>
     
     <!-- 成就列表 -->
     <div class="achievements-section">
@@ -846,6 +1036,10 @@
     </div>
   </div>
 
+  <script src="js/version.js"></script>
   <script src="js/game.js"></script>
+  
+  <!-- 版本显示 -->
+  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.0</div>
 </body>
 </html>

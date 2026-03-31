@@ -30,6 +30,174 @@ const ScreenShake = {
   }
 };
 
+// ==================== 死亡动画系统 ====================
+const DeathAnimation = {
+  animations: [],
+  
+  // 创建死亡动画
+  create(x, y, emoji, color, size, isElite = false) {
+    const animation = {
+      x, y,
+      emoji,
+      color,
+      size,
+      isElite,
+      frame: 0,
+      maxFrames: 30,
+      particles: this.createDeathParticles(x, y, color, isElite),
+      scale: 1,
+      rotation: 0,
+      opacity: 1
+    };
+    this.animations.push(animation);
+  },
+  
+  // 创建死亡粒子
+  createDeathParticles(x, y, color, isElite) {
+    const count = isElite ? 20 : 10;
+    const particles = [];
+    
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+      const speed = 2 + Math.random() * 4;
+      particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        size: 3 + Math.random() * 5,
+        color: color,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.3
+      });
+    }
+    
+    return particles;
+  },
+  
+  // 更新所有死亡动画
+  update() {
+    this.animations = this.animations.filter(anim => {
+      anim.frame++;
+      
+      // 缩放动画
+      anim.scale = 1 + (anim.frame / anim.maxFrames) * 0.5;
+      
+      // 旋转动画
+      anim.rotation += 0.1;
+      
+      // 透明度渐变
+      anim.opacity = 1 - (anim.frame / anim.maxFrames);
+      
+      // 更新粒子
+      anim.particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+        p.life -= 0.03;
+        p.rotation += p.rotationSpeed;
+      });
+      anim.particles = anim.particles.filter(p => p.life > 0);
+      
+      return anim.frame < anim.maxFrames || anim.particles.length > 0;
+    });
+  },
+  
+  // 渲染死亡动画
+  render(ctx, camera) {
+    this.animations.forEach(anim => {
+      ctx.save();
+      
+      // 渲染主体
+      ctx.translate(anim.x - camera.x, anim.y - camera.y);
+      ctx.rotate(anim.rotation);
+      ctx.scale(anim.scale, anim.scale);
+      ctx.globalAlpha = anim.opacity;
+      
+      ctx.font = `${anim.size}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(anim.emoji, 0, 0);
+      
+      ctx.restore();
+      
+      // 渲染粒子
+      anim.particles.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x - camera.x, p.y - camera.y);
+        ctx.rotate(p.rotation);
+        ctx.globalAlpha = p.life;
+        
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+        
+        ctx.restore();
+      });
+    });
+    ctx.globalAlpha = 1;
+  }
+};
+
+// ==================== 慢镜头系统 ====================
+const SlowMotion = {
+  active: false,
+  duration: 0,
+  maxDuration: 30, // 30帧（约0.5秒）
+  timeScale: 0.3, // 时间缩放比例
+  
+  // 触发慢镜头
+  trigger() {
+    this.active = true;
+    this.duration = this.maxDuration;
+  },
+  
+  // 更新慢镜头
+  update() {
+    if (!this.active) return 1; // 返回正常时间流速
+    
+    this.duration--;
+    if (this.duration <= 0) {
+      this.active = false;
+      return 1;
+    }
+    
+    return this.timeScale;
+  },
+  
+  // 获取当前时间缩放
+  getTimeScale() {
+    return this.active ? this.timeScale : 1;
+  },
+  
+  // 渲染慢镜头效果
+  render(ctx, canvas) {
+    if (!this.active) return;
+    
+    const progress = this.duration / this.maxDuration;
+    
+    // 边缘暗角效果
+    const gradient = ctx.createRadialGradient(
+      canvas.width / 2, canvas.height / 2, 0,
+      canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height)
+    );
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(0.7, `rgba(0,0,0,${0.3 * progress})`);
+    gradient.addColorStop(1, `rgba(0,0,0,${0.6 * progress})`);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 中心聚焦线
+    ctx.strokeStyle = `rgba(255,255,255,${0.3 * progress})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2, 100 + (1 - progress) * 50, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+};
+
 // ==================== 视觉特效系统 ====================
 const VisualEffects = {
   // 创建爆炸粒子
@@ -271,9 +439,598 @@ const BackgroundEffects = {
   }
 };
 
+// ==================== 武器精通系统 ====================
+const WeaponMastery = {
+  // 武器经验配置
+  expPerHit: 5,
+  expPerKill: 20,
+  expToNextLevel: [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000], // 每级所需经验
+  maxLevel: 10,
+  
+  // 获取武器当前等级
+  getLevel(weaponId) {
+    const saveData = SaveSystem.load();
+    return saveData.weaponMastery?.[weaponId]?.level || 0;
+  },
+  
+  // 获取武器当前经验
+  getExp(weaponId) {
+    const saveData = SaveSystem.load();
+    return saveData.weaponMastery?.[weaponId]?.exp || 0;
+  },
+  
+  // 获取升级所需经验
+  getExpToNext(weaponId) {
+    const level = this.getLevel(weaponId);
+    if (level >= this.maxLevel) return 0;
+    return this.expToNextLevel[level] || this.expToNextLevel[this.expToNextLevel.length - 1];
+  },
+  
+  // 添加武器经验
+  addExp(weaponId, amount) {
+    const saveData = SaveSystem.load();
+    if (!saveData.weaponMastery) saveData.weaponMastery = {};
+    if (!saveData.weaponMastery[weaponId]) {
+      saveData.weaponMastery[weaponId] = { level: 0, exp: 0, totalKills: 0 };
+    }
+    
+    const mastery = saveData.weaponMastery[weaponId];
+    if (mastery.level >= this.maxLevel) return false;
+    
+    mastery.exp += amount;
+    
+    // 检查升级
+    let leveledUp = false;
+    while (mastery.level < this.maxLevel && mastery.exp >= this.getExpToNext(weaponId)) {
+      mastery.exp -= this.getExpToNext(weaponId);
+      mastery.level++;
+      leveledUp = true;
+      this.onLevelUp(weaponId, mastery.level);
+    }
+    
+    SaveSystem.save(saveData);
+    return leveledUp;
+  },
+  
+  // 记录武器击杀
+  addKill(weaponId) {
+    const saveData = SaveSystem.load();
+    if (!saveData.weaponMastery) saveData.weaponMastery = {};
+    if (!saveData.weaponMastery[weaponId]) {
+      saveData.weaponMastery[weaponId] = { level: 0, exp: 0, totalKills: 0 };
+    }
+    saveData.weaponMastery[weaponId].totalKills++;
+    SaveSystem.save(saveData);
+  },
+  
+  // 升级时触发
+  onLevelUp(weaponId, newLevel) {
+    const weapon = WEAPONS[weaponId];
+    if (!weapon) return;
+    
+    // 显示升级提示
+    showWeaponLevelUp(weaponId, newLevel);
+    
+    // 解锁新特效
+    const unlocks = this.getUnlocks(weaponId, newLevel);
+    if (unlocks) {
+      setTimeout(() => {
+        showWeaponUnlock(weaponId, unlocks);
+      }, 1500);
+    }
+  },
+  
+  // 获取等级解锁内容
+  getUnlocks(weaponId, level) {
+    const unlockTable = {
+      textbook: {
+        3: { type: 'effect', name: '弹跳', desc: '课本会在敌人间弹跳1次' },
+        5: { type: 'stat', name: '伤害提升', desc: '课本伤害+20%' },
+        7: { type: 'effect', name: '穿透', desc: '课本可以穿透2个敌人' },
+        10: { type: 'ultimate', name: '知识洪流', desc: '同时发射3本课本' }
+      },
+      chalk: {
+        3: { type: 'stat', name: '数量+1', desc: '粉笔数量+1' },
+        5: { type: 'effect', name: '毒素', desc: '粉笔造成持续伤害' },
+        7: { type: 'stat', name: '范围扩大', desc: '散射角度+30%' },
+        10: { type: 'ultimate', name: '粉尘风暴', desc: '发射12支粉笔' }
+      },
+      ruler: {
+        3: { type: 'stat', name: '范围+20%', desc: '戒尺范围扩大' },
+        5: { type: 'effect', name: '眩晕', desc: '10%概率眩晕敌人' },
+        7: { type: 'stat', name: '速度+30%', desc: '旋转速度提升' },
+        10: { type: 'ultimate', name: '惩戒领域', desc: '同时有6把戒尺' }
+      },
+      basketball: {
+        3: { type: 'stat', name: '爆炸+20%', desc: '爆炸范围扩大' },
+        5: { type: 'effect', name: '燃烧', desc: '爆炸留下燃烧区域' },
+        7: { type: 'stat', name: '伤害+30%', desc: '爆炸伤害提升' },
+        10: { type: 'ultimate', name: '灌篮高手', desc: '篮球可以弹跳3次' }
+      },
+      eraser: {
+        3: { type: 'stat', name: '弹跳+1', desc: '弹跳次数+1' },
+        5: { type: 'effect', name: '净化', desc: '擦除敌人增益效果' },
+        7: { type: 'stat', name: '速度+25%', desc: '飞行速度提升' },
+        10: { type: 'ultimate', name: '完美擦除', desc: '可以弹射5次' }
+      },
+      broom: {
+        3: { type: 'stat', name: '击退+30%', desc: '击退距离增加' },
+        5: { type: 'effect', name: '清扫', desc: '击杀时清除周围子弹' },
+        7: { type: 'stat', name: '范围+25%', desc: '攻击范围扩大' },
+        10: { type: 'ultimate', name: '龙卷风', desc: '形成持续旋风' }
+      },
+      ink: {
+        3: { type: 'stat', name: '持续+2秒', desc: '墨水持续时间增加' },
+        5: { type: 'effect', name: '减速', desc: '墨水减速敌人' },
+        7: { type: 'stat', name: '范围+30%', desc: '溅射范围扩大' },
+        10: { type: 'ultimate', name: '墨海', desc: '形成大范围墨水池' }
+      },
+      triangle: {
+        3: { type: 'stat', name: '穿透+1', desc: '穿透敌人数量+1' },
+        5: { type: 'effect', name: '暴击', desc: '20%概率暴击' },
+        7: { type: 'stat', name: '速度+40%', desc: '飞行速度提升' },
+        10: { type: 'ultimate', name: '几何风暴', desc: '发射会分裂的飞镖' }
+      },
+      examPaper: {
+        3: { type: 'stat', name: '密度+20%', desc: '试卷密度增加' },
+        5: { type: 'effect', name: '致盲', desc: '敌人命中率降低' },
+        7: { type: 'stat', name: '范围+25%', desc: '覆盖范围扩大' },
+        10: { type: 'ultimate', name: '考试地狱', desc: '全屏试卷风暴' }
+      },
+      lunchBox: {
+        3: { type: 'stat', name: '眩晕+10%', desc: '眩晕概率提升' },
+        5: { type: 'effect', name: '砸扁', desc: '敌人体积暂时变小' },
+        7: { type: 'stat', name: '伤害+25%', desc: '饭盒伤害提升' },
+        10: { type: 'ultimate', name: '天降饭盒', desc: '随机掉落饭盒' }
+      },
+      waterBalloon: {
+        3: { type: 'stat', name: '减速+20%', desc: '减速效果增强' },
+        5: { type: 'effect', name: '溅射', desc: '水球会溅射到周围' },
+        7: { type: 'stat', name: '范围+30%', desc: '影响范围扩大' },
+        10: { type: 'ultimate', name: '洪水', desc: '形成持续水潭' }
+      },
+      firecracker: {
+        3: { type: 'stat', name: '爆炸+25%', desc: '爆炸范围扩大' },
+        5: { type: 'effect', name: '连爆', desc: '25%概率二次爆炸' },
+        7: { type: 'stat', name: '伤害+35%', desc: '爆炸伤害提升' },
+        10: { type: 'ultimate', name: '烟花盛宴', desc: '爆炸产生散射' }
+      }
+    };
+    
+    return unlockTable[weaponId]?.[level];
+  },
+  
+  // 获取武器属性加成
+  getBonuses(weaponId) {
+    const level = this.getLevel(weaponId);
+    const bonuses = {
+      damage: 1 + (level * 0.05), // 每级+5%伤害
+      speed: 1 + (level * 0.03),  // 每级+3%速度
+      pierce: Math.floor(level / 3), // 每3级+1穿透
+      critChance: level * 0.02 // 每级+2%暴击
+    };
+    
+    // 特殊等级加成
+    if (level >= 5) {
+      bonuses.special = true;
+    }
+    if (level >= 10) {
+      bonuses.ultimate = true;
+    }
+    
+    return bonuses;
+  },
+  
+  // 获取武器排行榜
+  getLeaderboard() {
+    const saveData = SaveSystem.load();
+    const mastery = saveData.weaponMastery || {};
+    
+    return Object.entries(mastery)
+      .map(([id, data]) => ({
+        id,
+        name: WEAPONS[id]?.name || id,
+        emoji: WEAPONS[id]?.emoji || '🔸',
+        level: data.level,
+        exp: data.exp,
+        totalKills: data.totalKills || 0
+      }))
+      .sort((a, b) => b.level - a.level || b.exp - a.exp);
+  }
+};
+
+// 显示武器升级提示
+function showWeaponLevelUp(weaponId, level) {
+  const weapon = WEAPONS[weaponId];
+  if (!weapon) return;
+  
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 60%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(255,193,7,0.95), rgba(255,152,0,0.95));
+    border: 3px solid #ffd700;
+    border-radius: 15px;
+    padding: 20px 30px;
+    text-align: center;
+    z-index: 1000;
+    animation: weaponLevelUp 2.5s ease-out forwards;
+    box-shadow: 0 0 30px rgba(255,193,7,0.6);
+  `;
+  notification.innerHTML = `
+    <div style="font-size:48px;margin-bottom:10px">${weapon.emoji}</div>
+    <div style="font-size:14px;color:#fff;text-transform:uppercase;letter-spacing:2px">武器精通</div>
+    <div style="font-size:24px;font-weight:bold;color:#fff;margin:5px 0">${weapon.name}</div>
+    <div style="font-size:32px;font-weight:900;color:#ffd700;text-shadow:0 0 10px #ff6f00">Lv.${level}</div>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.remove(), 2500);
+}
+
+// 显示武器解锁特效
+function showWeaponUnlock(weaponId, unlock) {
+  const weapon = WEAPONS[weaponId];
+  if (!weapon) return;
+  
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 70%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(156,39,176,0.95), rgba(103,58,183,0.95));
+    border: 2px solid #e1bee7;
+    border-radius: 12px;
+    padding: 15px 25px;
+    text-align: center;
+    z-index: 999;
+    animation: weaponUnlock 2s ease-out forwards;
+  `;
+  notification.innerHTML = `
+    <div style="font-size:12px;color:#e1bee7;text-transform:uppercase">解锁新能力</div>
+    <div style="font-size:20px;font-weight:bold;color:#fff;margin:5px 0">${unlock.name}</div>
+    <div style="font-size:14px;color:#fff;opacity:0.9">${unlock.desc}</div>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.remove(), 2000);
+}
+
+// ==================== 天赋树系统 ====================
+const TalentTree = {
+  // 天赋数据
+  talents: {
+    // 攻击系
+    attack: {
+      name: '攻击系',
+      emoji: '⚔️',
+      color: '#e74c3c',
+      talents: [
+        { id: 'atk1', name: '力量训练', desc: '攻击力+10%', maxLevel: 5, effect: { damage: 0.1 } },
+        { id: 'atk2', name: '狂暴', desc: '暴走伤害+20%', maxLevel: 3, effect: { rageDamage: 0.2 }, requires: 'atk1' },
+        { id: 'atk3', name: '弱点洞察', desc: '暴击率+5%', maxLevel: 5, effect: { critChance: 0.05 }, requires: 'atk1' },
+        { id: 'atk4', name: '致命一击', desc: '暴击伤害+50%', maxLevel: 3, effect: { critDamage: 0.5 }, requires: 'atk3' },
+        { id: 'atk5', name: '武器大师', desc: '武器伤害+15%', maxLevel: 3, effect: { weaponDamage: 0.15 }, requires: 'atk2' },
+        { id: 'atk_ultimate', name: '毁灭者', desc: '所有伤害+25%', maxLevel: 1, effect: { allDamage: 0.25 }, requires: ['atk4', 'atk5'] }
+      ]
+    },
+    // 防御系
+    defense: {
+      name: '防御系',
+      emoji: '🛡️',
+      color: '#3498db',
+      talents: [
+        { id: 'def1', name: '体能强化', desc: '最大生命+20', maxLevel: 5, effect: { maxHp: 20 } },
+        { id: 'def2', name: '坚韧', desc: '受到伤害-10%', maxLevel: 5, effect: { damageReduction: 0.1 }, requires: 'def1' },
+        { id: 'def3', name: '护盾掌握', desc: '护盾持续时间+50%', maxLevel: 3, effect: { shieldDuration: 0.5 }, requires: 'def1' },
+        { id: 'def4', name: '荆棘', desc: '反弹20%伤害', maxLevel: 3, effect: { thorns: 0.2 }, requires: 'def2' },
+        { id: 'def5', name: '不屈', desc: '生命值低于30%时防御+50%', maxLevel: 1, effect: { desperateDefense: 0.5 }, requires: 'def3' },
+        { id: 'def_ultimate', name: '钢铁意志', desc: '免疫控制效果', maxLevel: 1, effect: { ccImmunity: true }, requires: ['def4', 'def5'] }
+      ]
+    },
+    // 生存系
+    survival: {
+      name: '生存系',
+      emoji: '💚',
+      color: '#2ecc71',
+      talents: [
+        { id: 'sur1', name: '生命恢复', desc: '每秒恢复1点生命', maxLevel: 5, effect: { regen: 1 } },
+        { id: 'sur2', name: '吸血', desc: '造成伤害的5%转化为生命', maxLevel: 5, effect: { lifesteal: 0.05 }, requires: 'sur1' },
+        { id: 'sur3', name: '急救', desc: '使用道具恢复效果+30%', maxLevel: 3, effect: { healBoost: 0.3 }, requires: 'sur1' },
+        { id: 'sur4', name: '复活强化', desc: '复活时恢复100%生命', maxLevel: 1, effect: { fullRevive: true }, requires: 'sur2' },
+        { id: 'sur5', name: '顽强', desc: '受到致命伤害时保留1点生命(冷却60秒)', maxLevel: 1, effect: { cheatDeath: true }, requires: 'sur3' },
+        { id: 'sur_ultimate', name: '不朽', desc: '生命恢复速度翻倍，吸血效果翻倍', maxLevel: 1, effect: { regenBoost: 2 }, requires: ['sur4', 'sur5'] }
+      ]
+    },
+    // 特殊系
+    special: {
+      name: '特殊系',
+      emoji: '✨',
+      color: '#9b59b6',
+      talents: [
+        { id: 'spe1', name: '经验获取', desc: '经验获取+10%', maxLevel: 5, effect: { expGain: 0.1 } },
+        { id: 'spe2', name: '拾取范围', desc: '拾取范围+20%', maxLevel: 5, effect: { pickupRange: 0.2 }, requires: 'spe1' },
+        { id: 'spe3', name: '幸运', desc: '道具掉落率+15%', maxLevel: 5, effect: { itemLuck: 0.15 }, requires: 'spe1' },
+        { id: 'spe4', name: '冷却缩减', desc: '技能冷却-10%', maxLevel: 3, effect: { cooldownReduction: 0.1 }, requires: 'spe2' },
+        { id: 'spe5', name: '时间掌控', desc: '时间停止持续时间+50%', maxLevel: 3, effect: { timeFreezeBoost: 0.5 }, requires: 'spe3' },
+        { id: 'spe_ultimate', name: '超能力者', desc: '所有特殊效果+30%', maxLevel: 1, effect: { specialBoost: 0.3 }, requires: ['spe4', 'spe5'] }
+      ]
+    }
+  },
+
+  // 获取天赋点
+  getTalentPoints() {
+    const saveData = SaveSystem.load();
+    return saveData.talentPoints || 0;
+  },
+
+  // 添加天赋点
+  addTalentPoints(amount) {
+    const saveData = SaveSystem.load();
+    saveData.talentPoints = (saveData.talentPoints || 0) + amount;
+    SaveSystem.save(saveData);
+  },
+
+  // 获取已解锁的天赋
+  getUnlockedTalents() {
+    const saveData = SaveSystem.load();
+    return saveData.unlockedTalents || [];
+  },
+
+  // 检查天赋是否已解锁
+  isUnlocked(talentId) {
+    const unlocked = this.getUnlockedTalents();
+    return unlocked.includes(talentId);
+  },
+
+  // 获取天赋等级
+  getTalentLevel(talentId) {
+    const saveData = SaveSystem.load();
+    return saveData.talentLevels?.[talentId] || 0;
+  },
+
+  // 解锁天赋
+  unlockTalent(talentId) {
+    const talent = this.findTalent(talentId);
+    if (!talent) return false;
+
+    const currentLevel = this.getTalentLevel(talentId);
+    if (currentLevel >= talent.maxLevel) return false;
+
+    const points = this.getTalentPoints();
+    if (points < 1) return false;
+
+    // 检查前置条件
+    if (talent.requires) {
+      const requires = Array.isArray(talent.requires) ? talent.requires : [talent.requires];
+      const hasRequirements = requires.every(req => this.isUnlocked(req));
+      if (!hasRequirements) return false;
+    }
+
+    const saveData = SaveSystem.load();
+    if (!saveData.unlockedTalents) saveData.unlockedTalents = [];
+    if (!saveData.talentLevels) saveData.talentLevels = {};
+
+    // 扣除天赋点
+    saveData.talentPoints--;
+
+    // 升级天赋
+    saveData.talentLevels[talentId] = currentLevel + 1;
+    if (currentLevel === 0) {
+      saveData.unlockedTalents.push(talentId);
+    }
+
+    SaveSystem.save(saveData);
+
+    // 显示解锁提示
+    showTalentUnlock(talent);
+
+    return true;
+  },
+
+  // 查找天赋
+  findTalent(talentId) {
+    for (const branch of Object.values(this.talents)) {
+      const talent = branch.talents.find(t => t.id === talentId);
+      if (talent) return talent;
+    }
+    return null;
+  },
+
+  // 计算所有天赋加成
+  getAllBonuses() {
+    const bonuses = {
+      damage: 1,
+      rageDamage: 1,
+      critChance: 0,
+      critDamage: 1.5,
+      maxHp: 0,
+      damageReduction: 0,
+      shieldDuration: 1,
+      thorns: 0,
+      desperateDefense: 0,
+      ccImmunity: false,
+      regen: 0,
+      lifesteal: 0,
+      healBoost: 1,
+      fullRevive: false,
+      cheatDeath: false,
+      regenBoost: 1,
+      expGain: 1,
+      pickupRange: 1,
+      itemLuck: 1,
+      cooldownReduction: 1,
+      timeFreezeBoost: 1,
+      specialBoost: 1
+    };
+
+    const saveData = SaveSystem.load();
+    const levels = saveData.talentLevels || {};
+
+    for (const [talentId, level] of Object.entries(levels)) {
+      const talent = this.findTalent(talentId);
+      if (!talent || !talent.effect) continue;
+
+      for (const [key, value] of Object.entries(talent.effect)) {
+        if (typeof value === 'boolean') {
+          bonuses[key] = value;
+        } else if (key.includes('Damage') || key.includes('Gain') || key.includes('Boost') || key.includes('Duration')) {
+          bonuses[key] += value * level;
+        } else {
+          bonuses[key] += value * level;
+        }
+      }
+    }
+
+    return bonuses;
+  },
+
+  // 重置天赋
+  resetTalents() {
+    const saveData = SaveSystem.load();
+    const unlocked = saveData.unlockedTalents || [];
+    const levels = saveData.talentLevels || {};
+
+    // 计算返还的天赋点
+    let pointsToReturn = 0;
+    for (const level of Object.values(levels)) {
+      pointsToReturn += level;
+    }
+
+    saveData.talentPoints = (saveData.talentPoints || 0) + pointsToReturn;
+    saveData.unlockedTalents = [];
+    saveData.talentLevels = {};
+
+    SaveSystem.save(saveData);
+
+    return pointsToReturn;
+  },
+
+  // 通过成就获取天赋点
+  checkTalentPointsFromAchievements() {
+    const saveData = SaveSystem.load();
+    const achievements = saveData.achievements || {};
+    let pointsEarned = 0;
+
+    // 每解锁5个成就获得1点
+    const unlockedCount = Object.keys(achievements).length;
+    const pointsFromAchievements = Math.floor(unlockedCount / 5);
+
+    // 检查是否已经发放过
+    if (!saveData.talentPointsFromAchievements) saveData.talentPointsFromAchievements = 0;
+
+    if (pointsFromAchievements > saveData.talentPointsFromAchievements) {
+      pointsEarned = pointsFromAchievements - saveData.talentPointsFromAchievements;
+      saveData.talentPointsFromAchievements = pointsFromAchievements;
+      saveData.talentPoints = (saveData.talentPoints || 0) + pointsEarned;
+      SaveSystem.save(saveData);
+    }
+
+    return pointsEarned;
+  }
+};
+
+// ==================== 排行榜系统 ====================
+const Leaderboard = {
+  key: 'schoolRampage_leaderboard_v1',
+  maxEntries: 10,
+  
+  // 添加新记录
+  addEntry(entry) {
+    const data = this.load();
+    
+    const newEntry = {
+      ...entry,
+      date: Date.now(),
+      id: Date.now().toString(36) + Math.random().toString(36).substr(2)
+    };
+    
+    data.entries.push(newEntry);
+    
+    // 按分数排序并限制数量
+    data.entries.sort((a, b) => b.score - a.score);
+    if (data.entries.length > this.maxEntries) {
+      data.entries = data.entries.slice(0, this.maxEntries);
+    }
+    
+    this.save(data);
+    return this.getRank(newEntry.id);
+  },
+  
+  // 获取排名
+  getRank(entryId) {
+    const data = this.load();
+    const index = data.entries.findIndex(e => e.id === entryId);
+    return index >= 0 ? index + 1 : null;
+  },
+  
+  // 加载排行榜
+  load() {
+    try {
+      const data = localStorage.getItem(this.key);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error('排行榜加载失败:', e);
+    }
+    return { entries: [] };
+  },
+  
+  // 保存排行榜
+  save(data) {
+    try {
+      localStorage.setItem(this.key, JSON.stringify(data));
+    } catch (e) {
+      console.error('排行榜保存失败:', e);
+    }
+  },
+  
+  // 获取前N名
+  getTop(n = 10) {
+    const data = this.load();
+    return data.entries.slice(0, n);
+  },
+  
+  // 清空排行榜
+  clear() {
+    localStorage.removeItem(this.key);
+  }
+};
+
+// 显示天赋解锁提示
+function showTalentUnlock(talent) {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(155,89,182,0.95), rgba(142,68,173,0.95));
+    border: 2px solid #bb8fce;
+    border-radius: 15px;
+    padding: 20px 30px;
+    text-align: center;
+    z-index: 1000;
+    animation: talentUnlock 2s ease-out forwards;
+    box-shadow: 0 0 30px rgba(155,89,182,0.6);
+  `;
+  notification.innerHTML = `
+    <div style="font-size:14px;color:#e8daef;text-transform:uppercase;letter-spacing:2px">天赋解锁</div>
+    <div style="font-size:24px;font-weight:bold;color:#fff;margin:10px 0">${talent.name}</div>
+    <div style="font-size:14px;color:#f5eef8">${talent.desc}</div>
+  `;
+  document.body.appendChild(notification);
+
+  setTimeout(() => notification.remove(), 2000);
+}
+
 // ==================== 存档系统 ====================
 const SaveSystem = {
-  key: 'schoolRampage_save_v1',
+  key: 'schoolRampage_save_v2',
   
   load() {
     try {
@@ -303,6 +1060,9 @@ const SaveSystem = {
       totalPlayTime: 0,
       achievements: {},
       unlockedCharacters: ['badboy'],
+      weaponMastery: {}, // 武器精通数据
+      talentPoints: 0, // 天赋点
+      unlockedTalents: [], // 已解锁天赋
       bestRun: {
         kills: 0,
         time: 0,
@@ -491,6 +1251,727 @@ const ACHIEVEMENTS = {
     emoji: '⏱️',
     target: 10,
     check: (stats) => stats.timeFreezes
+  },
+  // 新增成就
+  killer500: {
+    id: 'killer500',
+    name: '万人斩',
+    description: '累计击杀5000人',
+    emoji: '💀',
+    target: 5000,
+    check: (stats, data) => data.totalKills + stats.kills
+  },
+  killer10000: {
+    id: 'killer10000',
+    name: '屠戮者',
+    description: '累计击杀10000人',
+    emoji: '🔱',
+    target: 10000,
+    check: (stats, data) => data.totalKills + stats.kills
+  },
+  survivor10: {
+    id: 'survivor10',
+    name: '生存王者',
+    description: '单局存活10分钟',
+    emoji: '⏰',
+    target: 600,
+    check: (stats) => Math.floor(stats.playTime / 1000)
+  },
+  combo100: {
+    id: 'combo100',
+    name: '连击之神',
+    description: '达成100连击',
+    emoji: '⚡',
+    target: 100,
+    check: (stats) => stats.maxCombo
+  },
+  combo200: {
+    id: 'combo200',
+    name: '连击传说',
+    description: '达成200连击',
+    emoji: '🌟',
+    target: 200,
+    check: (stats) => stats.maxCombo
+  },
+  bossSlayerAll: {
+    id: 'bossSlayerAll',
+    name: 'Boss终结者',
+    description: '击败所有Boss',
+    emoji: '🏆',
+    target: 3,
+    check: (stats) => stats.bossKilled
+  },
+  wave20: {
+    id: 'wave20',
+    name: '波次传奇',
+    description: '存活超过20波',
+    emoji: '🌊',
+    target: 20,
+    check: (stats) => stats.wave
+  },
+  wave30: {
+    id: 'wave30',
+    name: '无尽生存',
+    description: '存活超过30波',
+    emoji: '🌀',
+    target: 30,
+    check: (stats) => stats.wave
+  },
+  level30: {
+    id: 'level30',
+    name: '超越极限',
+    description: '单局达到30级',
+    emoji: '🚀',
+    target: 30,
+    check: (stats) => stats.level
+  },
+  level50: {
+    id: 'level50',
+    name: '神级存在',
+    description: '单局达到50级',
+    emoji: '👑',
+    target: 50,
+    check: (stats) => stats.level
+  },
+  rage100: {
+    id: 'rage100',
+    name: '狂暴之神',
+    description: '暴走状态下击杀100人',
+    emoji: '😤',
+    target: 100,
+    check: (stats) => stats.rageKills
+  },
+  rage200: {
+    id: 'rage200',
+    name: '暴走传说',
+    description: '暴走状态下击杀200人',
+    emoji: '💢',
+    target: 200,
+    check: (stats) => stats.rageKills
+  },
+  noDamage5: {
+    id: 'noDamage5',
+    name: '完美生存',
+    description: '单局不受伤存活5分钟',
+    emoji: '💎',
+    target: 1,
+    check: (stats) => stats.noDamageRun && stats.playTime >= 300000
+  },
+  eliteHunter100: {
+    id: 'eliteHunter100',
+    name: '精英克星',
+    description: '击败100个精英怪',
+    emoji: '👹',
+    target: 100,
+    check: (stats) => stats.eliteKills
+  },
+  eliteHunter500: {
+    id: 'eliteHunter500',
+    name: '精英终结者',
+    description: '击败500个精英怪',
+    emoji: '👺',
+    target: 500,
+    check: (stats) => stats.eliteKills
+  },
+  veteran50: {
+    id: 'veteran50',
+    name: '传说老兵',
+    description: '累计游戏50次',
+    emoji: '🎖️',
+    target: 50,
+    check: (stats, data) => data.totalGames + 1
+  },
+  veteran100: {
+    id: 'veteran100',
+    name: '百战不殆',
+    description: '累计游戏100次',
+    emoji: '🏅',
+    target: 100,
+    check: (stats, data) => data.totalGames + 1
+  },
+  collectorAll: {
+    id: 'collectorAll',
+    name: '全武器大师',
+    description: '解锁所有武器并达到满级',
+    emoji: '📚',
+    target: 12,
+    check: (stats) => stats.weaponsUnlocked
+  },
+  rich: {
+    id: 'rich',
+    name: '富豪',
+    description: '单局获得10000分',
+    emoji: '💰',
+    target: 10000,
+    check: (stats) => stats.kills * 10 + stats.bossKilled * 500 + stats.wave * 100
+  },
+  richSuper: {
+    id: 'richSuper',
+    name: '亿万富翁',
+    description: '单局获得50000分',
+    emoji: '💎',
+    target: 50000,
+    check: (stats) => stats.kills * 10 + stats.bossKilled * 500 + stats.wave * 100
+  }
+};
+
+// ==================== 称号系统 ====================
+const TITLES = {
+  // 新手称号
+  newbie: {
+    id: 'newbie',
+    name: '校园新生',
+    emoji: '🎒',
+    description: '刚开始校园生活',
+    requirement: '默认称号',
+    color: '#95a5a6'
+  },
+  // 击杀称号
+  killer: {
+    id: 'killer',
+    name: '问题学生',
+    emoji: '😤',
+    description: '累计击杀100人',
+    requirement: '解锁"百人斩"成就',
+    color: '#e74c3c',
+    requiresAchievement: 'killer10'
+  },
+  slayer: {
+    id: 'slayer',
+    name: '校园传说',
+    emoji: '💀',
+    description: '累计击杀1000人',
+    requirement: '解锁"千人斩"成就',
+    color: '#c0392b',
+    requiresAchievement: 'killer100'
+  },
+  reaper: {
+    id: 'reaper',
+    name: '死神',
+    emoji: '🔱',
+    description: '累计击杀10000人',
+    requirement: '解锁"屠戮者"成就',
+    color: '#8e44ad',
+    requiresAchievement: 'killer10000'
+  },
+  // 生存称号
+  survivor: {
+    id: 'survivor',
+    name: '生存专家',
+    emoji: '🏕️',
+    description: '单局存活5分钟',
+    requirement: '解锁"生存专家"成就',
+    color: '#27ae60',
+    requiresAchievement: 'survivor'
+  },
+  survivorKing: {
+    id: 'survivorKing',
+    name: '生存王者',
+    emoji: '👑',
+    description: '单局存活10分钟',
+    requirement: '解锁"生存王者"成就',
+    color: '#16a085',
+    requiresAchievement: 'survivor10'
+  },
+  // 等级称号
+  rookie: {
+    id: 'rookie',
+    name: '一年级',
+    emoji: '📖',
+    description: '单局达到10级',
+    requirement: '解锁"成长达人"成就',
+    color: '#3498db',
+    requiresAchievement: 'level10'
+  },
+  senior: {
+    id: 'senior',
+    name: '毕业生',
+    emoji: '🎓',
+    description: '单局达到20级',
+    requirement: '解锁"满级大佬"成就',
+    color: '#2980b9',
+    requiresAchievement: 'level20'
+  },
+  master: {
+    id: 'master',
+    name: '教授',
+    emoji: '👨‍🏫',
+    description: '单局达到50级',
+    requirement: '解锁"神级存在"成就',
+    color: '#8e44ad',
+    requiresAchievement: 'level50'
+  },
+  // 连击称号
+  comboMaster: {
+    id: 'comboMaster',
+    name: '连击大师',
+    emoji: '⚡',
+    description: '达成50连击',
+    requirement: '解锁"连击大师"成就',
+    color: '#f39c12',
+    requiresAchievement: 'combo50'
+  },
+  comboGod: {
+    id: 'comboGod',
+    name: '连击之神',
+    emoji: '🔥',
+    description: '达成100连击',
+    requirement: '解锁"连击之神"成就',
+    color: '#e67e22',
+    requiresAchievement: 'combo100'
+  },
+  // Boss称号
+  bossSlayer: {
+    id: 'bossSlayer',
+    name: 'Boss克星',
+    emoji: '🥊',
+    description: '击败第一个Boss',
+    requirement: '解锁"Boss克星"成就',
+    color: '#e74c3c',
+    requiresAchievement: 'bossSlayer'
+  },
+  bossEnder: {
+    id: 'bossEnder',
+    name: 'Boss终结者',
+    emoji: '🏆',
+    description: '击败所有Boss',
+    requirement: '解锁"Boss终结者"成就',
+    color: '#c0392b',
+    requiresAchievement: 'bossSlayerAll'
+  },
+  // 波次称号
+  waveMaster: {
+    id: 'waveMaster',
+    name: '波次大师',
+    emoji: '🌊',
+    description: '存活超过10波',
+    requirement: '解锁"波次大师"成就',
+    color: '#1abc9c',
+    requiresAchievement: 'waveMaster'
+  },
+  waveLegend: {
+    id: 'waveLegend',
+    name: '波次传奇',
+    emoji: '🌀',
+    description: '存活超过20波',
+    requirement: '解锁"波次传奇"成就',
+    color: '#16a085',
+    requiresAchievement: 'wave20'
+  },
+  // 精英称号
+  eliteHunter: {
+    id: 'eliteHunter',
+    name: '精英猎手',
+    emoji: '🎯',
+    description: '击败50个精英怪',
+    requirement: '解锁"精英猎手"成就',
+    color: '#9b59b6',
+    requiresAchievement: 'eliteHunter'
+  },
+  eliteSlayer: {
+    id: 'eliteSlayer',
+    name: '精英克星',
+    emoji: '👑',
+    description: '击败100个精英怪',
+    requirement: '解锁"精英克星"成就',
+    color: '#8e44ad',
+    requiresAchievement: 'eliteHunter100'
+  },
+  // 老兵称号
+  veteran: {
+    id: 'veteran',
+    name: '老兵',
+    emoji: '🎖️',
+    description: '累计游戏10次',
+    requirement: '解锁"老兵"成就',
+    color: '#34495e',
+    requiresAchievement: 'veteran'
+  },
+  legend: {
+    id: 'legend',
+    name: '传说老兵',
+    emoji: '🏅',
+    description: '累计游戏50次',
+    requirement: '解锁"传说老兵"成就',
+    color: '#2c3e50',
+    requiresAchievement: 'veteran50'
+  },
+  // 特殊称号
+  collector: {
+    id: 'collector',
+    name: '收藏家',
+    emoji: '📦',
+    description: '解锁所有武器',
+    requirement: '解锁"收藏家"成就',
+    color: '#e67e22',
+    requiresAchievement: 'collector'
+  },
+  noDamage: {
+    id: 'noDamage',
+    name: '完美主义者',
+    emoji: '💎',
+    description: '单局不受伤存活3分钟',
+    requirement: '解锁"无伤通关"成就',
+    color: '#00d2d3',
+    requiresAchievement: 'noDamage'
+  },
+  rich: {
+    id: 'rich',
+    name: '富豪',
+    emoji: '💰',
+    description: '单局获得10000分',
+    requirement: '解锁"富豪"成就',
+    color: '#f1c40f',
+    requiresAchievement: 'rich'
+  }
+};
+
+// 称号系统
+const TitleSystem = {
+  // 获取当前装备的称号
+  getCurrentTitle() {
+    const saveData = SaveSystem.load();
+    return saveData.currentTitle || 'newbie';
+  },
+  
+  // 设置当前称号
+  setCurrentTitle(titleId) {
+    const title = TITLES[titleId];
+    if (!title) return false;
+    
+    // 检查是否满足条件
+    if (title.requiresAchievement) {
+      const saveData = SaveSystem.load();
+      if (!saveData.achievements[title.requiresAchievement]) {
+        return false;
+      }
+    }
+    
+    const saveData = SaveSystem.load();
+    saveData.currentTitle = titleId;
+    SaveSystem.save(saveData);
+    return true;
+  },
+  
+  // 获取所有已解锁的称号
+  getUnlockedTitles() {
+    const saveData = SaveSystem.load();
+    const achievements = saveData.achievements || {};
+    
+    return Object.values(TITLES).filter(title => {
+      if (!title.requiresAchievement) return true;
+      return achievements[title.requiresAchievement];
+    });
+  },
+  
+  // 获取称号信息
+  getTitle(titleId) {
+    return TITLES[titleId];
+  },
+  
+  // 获取当前称号显示文本
+  getCurrentTitleDisplay() {
+    const titleId = this.getCurrentTitle();
+    const title = TITLES[titleId];
+    if (!title) return '';
+    return `[${title.emoji} ${title.name}]`;
+  }
+};
+
+// ==================== 音效系统 ====================
+const AudioSystem = {
+  enabled: true,
+  volume: 0.5,
+  ctx: null,
+  
+  // 初始化音频上下文
+  init() {
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      console.warn('Web Audio API not supported');
+      this.enabled = false;
+    }
+  },
+  
+  // 播放射击音效
+  playShoot(weaponId) {
+    if (!this.enabled || !this.ctx) return;
+    
+    const frequencies = {
+      textbook: 800,
+      chalk: 1200,
+      ruler: 600,
+      basketball: 400,
+      eraser: 1000,
+      broom: 500,
+      ink: 300,
+      triangle: 1500,
+      examPaper: 700,
+      lunchBox: 350,
+      waterBalloon: 900,
+      firecracker: 200
+    };
+    
+    const freq = frequencies[weaponId] || 800;
+    this.playTone(freq, 0.1, 'square');
+  },
+  
+  // 播放命中音效
+  playHit() {
+    if (!this.enabled || !this.ctx) return;
+    this.playTone(200, 0.05, 'sawtooth');
+  },
+  
+  // 播放击杀音效
+  playKill() {
+    if (!this.enabled || !this.ctx) return;
+    this.playTone(600, 0.15, 'square');
+    setTimeout(() => this.playTone(800, 0.1, 'square'), 50);
+  },
+  
+  // 播放爆炸音效
+  playExplosion() {
+    if (!this.enabled || !this.ctx) return;
+    this.playNoise(0.3);
+  },
+  
+  // 播放升级音效
+  playLevelUp() {
+    if (!this.enabled || !this.ctx) return;
+    [400, 600, 800, 1000].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 0.1), i * 100);
+    });
+  },
+  
+  // 播放拾取音效
+  playPickup() {
+    if (!this.enabled || !this.ctx) return;
+    this.playTone(1200, 0.05, 'sine');
+  },
+  
+  // 播放受伤音效
+  playHurt() {
+    if (!this.enabled || !this.ctx) return;
+    this.playTone(150, 0.2, 'sawtooth');
+  },
+  
+  // 播放Boss警告音效
+  playBossWarning() {
+    if (!this.enabled || !this.ctx) return;
+    [300, 250, 200].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 0.3, 'sawtooth'), i * 200);
+    });
+  },
+  
+  // 播放Boss死亡音效
+  playBossDeath() {
+    if (!this.enabled || !this.ctx) return;
+    this.playNoise(0.5);
+    setTimeout(() => this.playTone(400, 0.3), 100);
+    setTimeout(() => this.playTone(300, 0.4), 300);
+  },
+  
+  // 播放游戏结束音效
+  playGameOver() {
+    if (!this.enabled || !this.ctx) return;
+    [600, 500, 400, 300, 200].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 0.3), i * 150);
+    });
+  },
+  
+  // 播放成就解锁音效
+  playAchievement() {
+    if (!this.enabled || !this.ctx) return;
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 0.15, 'sine'), i * 100);
+    });
+  },
+  
+  // 播放时间停止音效
+  playTimeFreeze() {
+    if (!this.enabled || !this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    
+    osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.5);
+    
+    gain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+    
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.5);
+  },
+  
+  // 播放暴走音效
+  playRage() {
+    if (!this.enabled || !this.ctx) return;
+    [200, 300, 400, 500, 600].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 0.2, 'sawtooth'), i * 50);
+    });
+  },
+  
+  // 基础音调播放
+  playTone(frequency, duration, type = 'square') {
+    if (!this.ctx) return;
+    
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    
+    osc.frequency.value = frequency;
+    osc.type = type;
+    
+    gain.gain.setValueAtTime(this.volume * 0.3, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+    
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  },
+  
+  // 噪音生成（用于爆炸等效果）
+  playNoise(duration) {
+    if (!this.ctx) return;
+    
+    const bufferSize = this.ctx.sampleRate * duration;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(this.volume * 0.5, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+    
+    // 添加滤波器使噪音更低沉
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1000;
+    
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    noise.start();
+  },
+  
+  // 设置音量
+  setVolume(vol) {
+    this.volume = Math.max(0, Math.min(1, vol));
+  },
+  
+  // 切换音效开关
+  toggle() {
+    this.enabled = !this.enabled;
+    return this.enabled;
+  }
+};
+
+// ==================== BGM系统 ====================
+const BGM = {
+  enabled: false,
+  currentTrack: null,
+  volume: 0.2,
+  ctx: null,
+  nextNoteTime: 0,
+  timerID: null,
+  
+  init() {
+    this.ctx = AudioSystem.ctx;
+  },
+  
+  playBattle() {
+    if (!this.enabled || !this.ctx) return;
+    this.stop();
+    this.currentTrack = 'battle';
+    this.nextNoteTime = this.ctx.currentTime;
+    this.scheduleBattleMusic();
+  },
+  
+  playBoss() {
+    if (!this.enabled || !this.ctx) return;
+    this.stop();
+    this.currentTrack = 'boss';
+    this.nextNoteTime = this.ctx.currentTime;
+    this.scheduleBossMusic();
+  },
+  
+  scheduleBattleMusic() {
+    if (this.currentTrack !== 'battle') return;
+    const bpm = 120;
+    const secondsPerBeat = 60.0 / bpm;
+    while (this.nextNoteTime < this.ctx.currentTime + 0.1) {
+      this.playBeat(this.nextNoteTime, 'battle');
+      this.nextNoteTime += secondsPerBeat;
+    }
+    this.timerID = setTimeout(() => this.scheduleBattleMusic(), 25);
+  },
+  
+  scheduleBossMusic() {
+    if (this.currentTrack !== 'boss') return;
+    const bpm = 140;
+    const secondsPerBeat = 60.0 / bpm;
+    while (this.nextNoteTime < this.ctx.currentTime + 0.1) {
+      this.playBeat(this.nextNoteTime, 'boss');
+      this.nextNoteTime += secondsPerBeat;
+    }
+    this.timerID = setTimeout(() => this.scheduleBossMusic(), 25);
+  },
+  
+  playBeat(time, type) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    if (type === 'battle') {
+      osc.frequency.value = 220;
+      osc.type = 'sine';
+    } else {
+      osc.frequency.value = 110;
+      osc.type = 'sawtooth';
+    }
+    gain.gain.setValueAtTime(this.volume * 0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(time);
+    osc.stop(time + 0.1);
+  },
+  
+  stop() {
+    this.currentTrack = null;
+    if (this.timerID) {
+      clearTimeout(this.timerID);
+      this.timerID = null;
+    }
+  },
+  
+  setVolume(vol) {
+    this.volume = Math.max(0, Math.min(1, vol));
+  },
+  
+  toggle() {
+    this.enabled = !this.enabled;
+    if (!this.enabled) {
+      this.stop();
+    } else if (gameState.running) {
+      if (gameState.boss) {
+        this.playBoss();
+      } else {
+        this.playBattle();
+      }
+    }
+    return this.enabled;
   }
 };
 
@@ -612,100 +2093,442 @@ const ENEMY_TYPES = {
   }
 };
 
-// Boss配置 - 教导主任
-const BOSS_CONFIG = {
-  name: '教导主任',
-  emoji: '👨‍🏫',
-  baseHp: 500,
-  damage: 25,
-  speed: 0.7,
-  exp: 500,
-  size: 60,
-  
-  // Boss技能
-  skills: [
-    {
-      name: '作业轰炸',
-      emoji: '📚',
-      cooldown: 5000,
-      lastUsed: 0,
-      execute: (boss, player) => {
-        // 向玩家发射8个方向的作业
-        for (let i = 0; i < 8; i++) {
-          const angle = (i / 8) * Math.PI * 2;
-          gameState.bullets.push({
-            x: boss.x,
-            y: boss.y,
-            vx: Math.cos(angle) * 4,
-            vy: Math.sin(angle) * 4,
-            damage: 15,
-            isEnemyBullet: true,
-            emoji: '📚',
-            life: 3
+// ==================== Boss系统 ====================
+const BOSSES = {
+  // 第1个Boss - 教导主任 (波次10)
+  disciplinarian: {
+    id: 'disciplinarian',
+    name: '教导主任',
+    emoji: '👨‍🏫',
+    title: '纪律守护者',
+    baseHp: 800,
+    damage: 20,
+    speed: 0.8,
+    exp: 500,
+    size: 60,
+    color: '#e74c3c',
+    
+    skills: [
+      {
+        name: '作业轰炸',
+        emoji: '📚',
+        cooldown: 6000,
+        description: '发射8个方向的作业弹幕',
+        execute: (boss, player) => {
+          // 8方向作业弹幕
+          for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const speed = 4 + boss.phase * 0.5;
+            gameState.bullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              damage: 15 + boss.phase * 3,
+              isEnemyBullet: true,
+              emoji: '📚',
+              life: 4,
+              size: 20
+            });
+          }
+          // 额外向玩家方向发射
+          const angleToPlayer = Math.atan2(player.y - boss.y, player.x - boss.x);
+          for (let i = -1; i <= 1; i++) {
+            const angle = angleToPlayer + i * 0.3;
+            gameState.bullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(angle) * 5,
+              vy: Math.sin(angle) * 5,
+              damage: 20 + boss.phase * 4,
+              isEnemyBullet: true,
+              emoji: '📖',
+              life: 3,
+              size: 22
+            });
+          }
+          showBossSkillEffect(boss.x, boss.y, '📚 作业轰炸!', '#e74c3c');
+          ScreenShake.shake(5, 300);
+        }
+      },
+      {
+        name: '点名批评',
+        emoji: '📢',
+        cooldown: 10000,
+        description: '锁定玩家，降低移动速度',
+        execute: (boss, player) => {
+          // 玩家减速效果
+          gameState.activeEffects.slow = {
+            active: true,
+            endTime: Date.now() + 4000,
+            multiplier: 0.4
+          };
+          // 创建锁定标记
+          gameState.particles.push({
+            x: player.x,
+            y: player.y - 40,
+            vx: 0,
+            vy: -1,
+            life: 3,
+            color: '#e74c3c',
+            size: 30,
+            type: 'lockOn',
+            emoji: '🔒',
+            target: player
           });
+          showBossSkillEffect(player.x, player.y - 60, '📢 你被点名了!', '#e74c3c');
         }
-        showBossSkillEffect(boss.x, boss.y, '📚 作业轰炸!');
-      }
-    },
-    {
-      name: '点名批评',
-      emoji: '📢',
-      cooldown: 8000,
-      lastUsed: 0,
-      execute: (boss, player) => {
-        // 锁定玩家3秒，玩家减速
-        gameState.activeEffects.slow = {
-          active: true,
-          endTime: Date.now() + 3000,
-          multiplier: 0.5
-        };
-        showBossSkillEffect(player.x, player.y - 50, '📢 你被点名了!');
-      }
-    },
-    {
-      name: '大扫除',
-      emoji: '🧹',
-      cooldown: 12000,
-      lastUsed: 0,
-      execute: (boss, player) => {
-        // 全屏旋风，向Boss吸引
-        gameState.enemies.forEach(enemy => {
-          const angle = Math.atan2(boss.y - enemy.y, boss.x - enemy.x);
-          enemy.vx = Math.cos(angle) * 3;
-          enemy.vy = Math.sin(angle) * 3;
-          enemy.isPulled = true;
-        });
-        showBossSkillEffect(boss.x, boss.y, '🧹 大扫除!');
-      }
-    },
-    {
-      name: '叫家长',
-      emoji: '📞',
-      cooldown: 15000,
-      lastUsed: 0,
-      execute: (boss, player) => {
-        // 召唤4个小弟
-        for (let i = 0; i < 4; i++) {
-          const angle = (i / 4) * Math.PI * 2;
-          const dist = 100;
-          spawnEnemyAt(
-            boss.x + Math.cos(angle) * dist,
-            boss.y + Math.sin(angle) * dist,
-            'tank'
-          );
+      },
+      {
+        name: '叫家长',
+        emoji: '📞',
+        cooldown: 15000,
+        description: '召唤4个小弟协助战斗',
+        execute: (boss, player) => {
+          for (let i = 0; i < 4; i++) {
+            const angle = (i / 4) * Math.PI * 2;
+            const dist = 120;
+            const enemyType = i % 2 === 0 ? 'tank' : 'minion';
+            spawnEnemyAt(
+              boss.x + Math.cos(angle) * dist,
+              boss.y + Math.sin(angle) * dist,
+              enemyType
+            );
+          }
+          showBossSkillEffect(boss.x, boss.y, '📞 叫家长!', '#e74c3c');
         }
-        showBossSkillEffect(boss.x, boss.y, '📞 叫家长!');
+      },
+      {
+        name: '大扫除',
+        emoji: '🧹',
+        cooldown: 12000,
+        description: '全屏吸引敌人到Boss周围',
+        execute: (boss, player) => {
+          gameState.enemies.forEach(enemy => {
+            const angle = Math.atan2(boss.y - enemy.y, boss.x - enemy.x);
+            enemy.vx = Math.cos(angle) * 5;
+            enemy.vy = Math.sin(angle) * 5;
+            enemy.isPulled = true;
+            enemy.pullEndTime = Date.now() + 2000;
+          });
+          // 创建旋风特效
+          for (let i = 0; i < 20; i++) {
+            const angle = (i / 20) * Math.PI * 2;
+            gameState.particles.push({
+              x: boss.x + Math.cos(angle) * 50,
+              y: boss.y + Math.sin(angle) * 50,
+              vx: Math.cos(angle + Math.PI/2) * 3,
+              vy: Math.sin(angle + Math.PI/2) * 3,
+              life: 2,
+              color: '#95a5a6',
+              size: 8,
+              type: 'whirlwind'
+            });
+          }
+          showBossSkillEffect(boss.x, boss.y, '🧹 大扫除!', '#95a5a6');
+        }
       }
-    }
-  ],
+    ],
+    
+    phases: [
+      { hpPercent: 1.0, multiplier: 1, name: '第一阶段' },
+      { hpPercent: 0.6, multiplier: 1.4, name: '第二阶段' },
+      { hpPercent: 0.3, multiplier: 1.8, name: '狂暴阶段' }
+    ]
+  },
   
-  // 阶段转换
-  phases: [
-    { hpPercent: 1.0, multiplier: 1 },
-    { hpPercent: 0.7, multiplier: 1.3 },
-    { hpPercent: 0.4, multiplier: 1.6 },
-    { hpPercent: 0.2, multiplier: 2 }
-  ]
+  // 第2个Boss - 校长 (波次20)
+  principal: {
+    id: 'principal',
+    name: '校长',
+    emoji: '👴',
+    title: '学校统治者',
+    baseHp: 1500,
+    damage: 30,
+    speed: 0.6,
+    exp: 1000,
+    size: 70,
+    color: '#8e44ad',
+    
+    skills: [
+      {
+        name: '校规制裁',
+        emoji: '📜',
+        cooldown: 8000,
+        description: '召唤校规法阵，在范围内持续伤害',
+        execute: (boss, player) => {
+          // 在玩家位置创建危险区域
+          const zoneX = player.x;
+          const zoneY = player.y;
+          gameState.hazardZones = gameState.hazardZones || [];
+          gameState.hazardZones.push({
+            x: zoneX,
+            y: zoneY,
+            radius: 150,
+            damage: 10 + boss.phase * 5,
+            endTime: Date.now() + 5000,
+            color: '#8e44ad',
+            emoji: '📜'
+          });
+          showBossSkillEffect(zoneX, zoneY, '📜 校规制裁!', '#8e44ad');
+        }
+      },
+      {
+        name: '权威压制',
+        emoji: '👑',
+        cooldown: 12000,
+        description: '全屏震慑，玩家无法攻击3秒',
+        execute: (boss, player) => {
+          gameState.activeEffects.silence = {
+            active: true,
+            endTime: Date.now() + 3000
+          };
+          // 创建震慑波
+          for (let r = 50; r <= 400; r += 50) {
+            setTimeout(() => {
+              for (let i = 0; i < 16; i++) {
+                const angle = (i / 16) * Math.PI * 2;
+                gameState.particles.push({
+                  x: boss.x + Math.cos(angle) * r,
+                  y: boss.y + Math.sin(angle) * r,
+                  vx: Math.cos(angle) * 2,
+                  vy: Math.sin(angle) * 2,
+                  life: 0.5,
+                  color: '#8e44ad',
+                  size: 10,
+                  type: 'shockwave'
+                });
+              }
+            }, (r / 50) * 100);
+          }
+          showBossSkillEffect(boss.x, boss.y, '👑 权威压制!', '#8e44ad');
+          ScreenShake.shake(10, 500);
+        }
+      },
+      {
+        name: '全校通报',
+        emoji: '📢',
+        cooldown: 15000,
+        description: '召唤大量学生围攻',
+        execute: (boss, player) => {
+          // 在屏幕边缘召唤8个学生
+          const spawnPoints = [
+            { x: boss.x - 400, y: boss.y },
+            { x: boss.x + 400, y: boss.y },
+            { x: boss.x, y: boss.y - 300 },
+            { x: boss.x, y: boss.y + 300 },
+            { x: boss.x - 300, y: boss.y - 300 },
+            { x: boss.x + 300, y: boss.y - 300 },
+            { x: boss.x - 300, y: boss.y + 300 },
+            { x: boss.x + 300, y: boss.y + 300 }
+          ];
+          spawnPoints.forEach((point, i) => {
+            setTimeout(() => {
+              const types = ['runner', 'minion', 'tank'];
+              spawnEnemyAt(point.x, point.y, types[i % 3]);
+            }, i * 200);
+          });
+          showBossSkillEffect(boss.x, boss.y, '📢 全校通报!', '#8e44ad');
+        }
+      },
+      {
+        name: '终极审判',
+        emoji: '⚖️',
+        cooldown: 20000,
+        description: '发射追踪弹幕，持续10秒',
+        execute: (boss, player) => {
+          // 持续发射追踪弹
+          let shots = 0;
+          const interval = setInterval(() => {
+            if (!gameState.boss || gameState.boss.id !== boss.id || shots >= 10) {
+              clearInterval(interval);
+              return;
+            }
+            const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            gameState.bullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(angle) * 3,
+              vy: Math.sin(angle) * 3,
+              damage: 25 + boss.phase * 5,
+              isEnemyBullet: true,
+              emoji: '⚖️',
+              life: 5,
+              size: 25,
+              homing: true,
+              target: player,
+              homingStrength: 0.1
+            });
+            shots++;
+          }, 800);
+          showBossSkillEffect(boss.x, boss.y, '⚖️ 终极审判!', '#8e44ad');
+        }
+      }
+    ],
+    
+    phases: [
+      { hpPercent: 1.0, multiplier: 1, name: '威严姿态' },
+      { hpPercent: 0.65, multiplier: 1.3, name: '愤怒形态' },
+      { hpPercent: 0.35, multiplier: 1.7, name: '暴走模式' },
+      { hpPercent: 0.15, multiplier: 2.2, name: '绝望挣扎' }
+    ]
+  },
+  
+  // 第3个Boss - 食堂大妈 (波次30)
+  lunchLady: {
+    id: 'lunchLady',
+    name: '食堂大妈',
+    emoji: '👩‍🍳',
+    title: '黑暗料理王',
+    baseHp: 2000,
+    damage: 35,
+    speed: 0.5,
+    exp: 1500,
+    size: 75,
+    color: '#d35400',
+    
+    skills: [
+      {
+        name: '黑暗料理',
+        emoji: '🍲',
+        cooldown: 7000,
+        description: '投掷各种食物造成不同效果',
+        execute: (boss, player) => {
+          const foods = [
+            { emoji: '🌶️', effect: 'burn', damage: 30, color: '#e74c3c' },
+            { emoji: '🧊', effect: 'freeze', damage: 15, color: '#3498db' },
+            { emoji: '🍋', effect: 'slow', damage: 20, color: '#f1c40f' },
+            { emoji: '🍖', effect: 'heal', damage: -20, color: '#27ae60' }
+          ];
+          // 发射6个食物
+          for (let i = 0; i < 6; i++) {
+            const food = foods[Math.floor(Math.random() * foods.length)];
+            const angle = Math.atan2(player.y - boss.y, player.x - boss.x) + (Math.random() - 0.5) * 1;
+            gameState.bullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(angle) * (3 + Math.random()),
+              vy: Math.sin(angle) * (3 + Math.random()),
+              damage: food.damage * (1 + boss.phase * 0.3),
+              isEnemyBullet: true,
+              emoji: food.emoji,
+              life: 4,
+              size: 24,
+              effect: food.effect,
+              color: food.color
+            });
+          }
+          showBossSkillEffect(boss.x, boss.y, '🍲 黑暗料理!', '#d35400');
+        }
+      },
+      {
+        name: '手抖攻击',
+        emoji: '🥄',
+        cooldown: 5000,
+        description: '大范围随机投掷',
+        execute: (boss, player) => {
+          // 向随机方向发射大量投射物
+          for (let i = 0; i < 12; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 4;
+            gameState.bullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              damage: 15 + boss.phase * 3,
+              isEnemyBullet: true,
+              emoji: ['🥄', '🍴', '🥢', '🥣'][Math.floor(Math.random() * 4)],
+              life: 3,
+              size: 18
+            });
+          }
+          showBossSkillEffect(boss.x, boss.y, '🥄 手抖攻击!', '#d35400');
+          ScreenShake.shake(8, 400);
+        }
+      },
+      {
+        name: '食物召唤',
+        emoji: '🍔',
+        cooldown: 10000,
+        description: '召唤食物小兵',
+        execute: (boss, player) => {
+          // 召唤3个特殊食物怪
+          for (let i = 0; i < 3; i++) {
+            const angle = (i / 3) * Math.PI * 2;
+            const dist = 100;
+            const foodEnemy = {
+              x: boss.x + Math.cos(angle) * dist,
+              y: boss.y + Math.sin(angle) * dist,
+              hp: 100 + boss.phase * 50,
+              maxHp: 100 + boss.phase * 50,
+              damage: 15 + boss.phase * 5,
+              speed: 1.2,
+              exp: 50,
+              size: 35,
+              emoji: ['🍔', '🍟', '🌭'][i],
+              color: '#e67e22',
+              isFoodMinion: true,
+              onDeath: () => {
+                // 死亡时掉落治疗道具
+                spawnItemAt(boss.x + Math.cos(angle) * dist, boss.y + Math.sin(angle) * dist, 'healthPack');
+              }
+            };
+            gameState.enemies.push(foodEnemy);
+          }
+          showBossSkillEffect(boss.x, boss.y, '🍔 食物召唤!', '#d35400');
+        }
+      },
+      {
+        name: '食堂暴动',
+        emoji: '🍽️',
+        cooldown: 18000,
+        description: '全屏食物雨',
+        execute: (boss, player) => {
+          // 从天上掉落大量食物
+          let drops = 0;
+          const interval = setInterval(() => {
+            if (!gameState.boss || gameState.boss.id !== boss.id || drops >= 30) {
+              clearInterval(interval);
+              return;
+            }
+            const x = boss.x + (Math.random() - 0.5) * 600;
+            const y = boss.y - 300;
+            gameState.bullets.push({
+              x: x,
+              y: y,
+              vx: 0,
+              vy: 6 + Math.random() * 3,
+              damage: 20 + boss.phase * 5,
+              isEnemyBullet: true,
+              emoji: ['🍎', '🍊', '🍇', '🍉', '🍌', '🍓'][Math.floor(Math.random() * 6)],
+              life: 3,
+              size: 22,
+              gravity: true
+            });
+            drops++;
+          }, 200);
+          showBossSkillEffect(boss.x, boss.y - 100, '🍽️ 食堂暴动!', '#d35400');
+          ScreenShake.shake(12, 1000);
+        }
+      }
+    ],
+    
+    phases: [
+      { hpPercent: 1.0, multiplier: 1, name: '准备食材' },
+      { hpPercent: 0.7, multiplier: 1.2, name: '开始烹饪' },
+      { hpPercent: 0.4, multiplier: 1.6, name: '大火爆炒' },
+      { hpPercent: 0.2, multiplier: 2.0, name: '终极黑暗料理' }
+    ]
+  }
+};
+
+// Boss战斗配置
+const BOSS_SPAWN_WAVES = [10, 20, 30]; // 哪些波次生成Boss
+const BOSS_REWARDS = {
+  disciplinarian: ['lunchBox', 'damage', 'hp'],
+  principal: ['waterBalloon', 'attackSpeed', 'speed'],
+  lunchLady: ['firecracker', 'crit', 'defense']
 };
 
 // 武器/技能类型
@@ -1067,15 +2890,16 @@ let gameState = {
   particles: [],
   expOrbs: [],
   
-  // Boss状态
-  boss: null,
-  bossSpawnTimer: 0,
-  nextBossSpawn: CONFIG.bossSpawnInterval,
-  
   // 波次系统
   wave: 1,
   waveStartTime: 0,
   nextWaveTime: CONFIG.waveInterval,
+  
+  // Boss系统
+  boss: null,
+  bossDefeated: [],
+  hazardZones: [],
+  bossFightActive: false,
   
   // 统计
   kills: 0,
@@ -1106,6 +2930,9 @@ function init() {
   
   // 初始化背景效果
   BackgroundEffects.init();
+  
+  // 初始化音效系统
+  AudioSystem.init();
   
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
@@ -1172,6 +2999,11 @@ function setupUI() {
     document.getElementById('gameOverModal').classList.remove('active');
     showStartScreen();
   });
+  
+  // 初始化版本管理器
+  if (window.VersionManager) {
+    VersionManager.init();
+  }
 }
 
 // ==================== 游戏流程 ====================
@@ -1251,6 +3083,12 @@ function startGame() {
   gameState.waveStartTime = 0;
   gameState.nextWaveTime = CONFIG.waveInterval;
   
+  // 重置Boss系统
+  gameState.boss = null;
+  gameState.bossDefeated = [];
+  gameState.hazardZones = [];
+  gameState.bossFightActive = false;
+  
   // 重置时间冻结
   gameState.timeFrozen = false;
   gameState.timeFreezeEnd = 0;
@@ -1270,6 +3108,9 @@ function startGame() {
   gameState.running = true;
   gameState.paused = false;
   gameState.gameOver = false;
+  
+  // 播放战斗BGM
+  BGM.playBattle();
   
   // 隐藏开始界面
   document.getElementById('startScreen').classList.add('hidden');
@@ -1363,6 +3204,9 @@ function updateGameOverStats(saveData) {
 }
 
 function showAchievementUnlock(achievement) {
+  // 播放成就解锁音效
+  AudioSystem.playAchievement();
+  
   const notification = document.createElement('div');
   notification.className = 'achievement-notification';
   notification.innerHTML = `
@@ -1430,6 +3274,12 @@ function gameOver() {
   gameState.gameOver = true;
   gameState.running = false;
   
+  // 停止BGM
+  BGM.stop();
+  
+  // 播放游戏结束音效
+  AudioSystem.playGameOver();
+  
   const surviveTime = Math.floor((Date.now() - gameState.startTime) / 1000);
   const minutes = Math.floor(surviveTime / 60).toString().padStart(2, '0');
   const seconds = (surviveTime % 60).toString().padStart(2, '0');
@@ -1459,6 +3309,24 @@ function gameOver() {
   
   const saveData = SaveSystem.updateStats(gameStats);
   
+  // 添加到排行榜
+  const score = gameState.kills * 10 + gameState.bossKilled * 500 + gameState.wave * 100;
+  const rank = Leaderboard.addEntry({
+    score: score,
+    kills: gameState.kills,
+    time: surviveTime,
+    level: gameState.player.level,
+    wave: gameState.wave,
+    bossKilled: gameState.bossKilled,
+    character: gameState.player.character
+  });
+  
+  // 检查天赋点奖励
+  const newTalentPoints = TalentTree.checkTalentPointsFromAchievements();
+  if (newTalentPoints > 0) {
+    showEffectIndicator(`✨ 获得 ${newTalentPoints} 天赋点!`, '#9b59b6');
+  }
+  
   document.getElementById('finalTime').textContent = `${minutes}:${seconds}`;
   document.getElementById('finalKills').textContent = gameState.kills;
   document.getElementById('finalLevel').textContent = gameState.player.level;
@@ -1466,7 +3334,46 @@ function gameOver() {
   // 更新游戏结束界面显示存档数据
   updateGameOverStats(saveData);
   
+  // 显示排行榜排名
+  if (rank && rank <= 10) {
+    setTimeout(() => {
+      showLeaderboardRank(rank);
+    }, 1000);
+  }
+  
   document.getElementById('gameOverModal').classList.add('active');
+}
+
+// 显示排行榜排名
+function showLeaderboardRank(rank) {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(241,196,15,0.95), rgba(243,156,18,0.95));
+    border: 3px solid #f39c12;
+    border-radius: 20px;
+    padding: 25px 40px;
+    text-align: center;
+    z-index: 1100;
+    animation: rankPopup 3s ease-out forwards;
+    box-shadow: 0 0 40px rgba(241,196,15,0.8);
+  `;
+  
+  const rankEmoji = rank === 1 ? '👑' : (rank <= 3 ? '🥈' : '🏅');
+  const rankText = rank === 1 ? '冠军' : (rank === 2 ? '亚军' : (rank === 3 ? '季军' : `第${rank}名`));
+  
+  notification.innerHTML = `
+    <div style="font-size:56px;margin-bottom:10px">${rankEmoji}</div>
+    <div style="font-size:16px;color:#fff;text-transform:uppercase;letter-spacing:3px">排行榜</div>
+    <div style="font-size:42px;font-weight:900;color:#fff;margin:10px 0;text-shadow:0 0 20px rgba(0,0,0,0.3)">${rankText}</div>
+    <div style="font-size:14px;color:#fef9e7">恭喜进入前10名!</div>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.remove(), 3000);
 }
 
 // ==================== 游戏循环 ====================
@@ -1487,6 +3394,13 @@ function gameLoop() {
 function update(deltaTime) {
   const player = gameState.player;
   
+  // 应用慢镜头时间缩放
+  const timeScale = SlowMotion.getTimeScale();
+  deltaTime *= timeScale;
+  
+  // 更新慢镜头
+  SlowMotion.update();
+  
   // 更新屏幕震动
   ScreenShake.update(deltaTime);
   
@@ -1498,6 +3412,9 @@ function update(deltaTime) {
   
   // 更新道具效果
   updateActiveEffects();
+  
+  // 更新死亡动画
+  DeathAnimation.update();
   
   // 玩家移动
   updatePlayerMovement(deltaTime);
@@ -1615,6 +3532,9 @@ function fireWeapon(weaponId, weapon, weaponData) {
   const player = gameState.player;
   const count = weaponData.level;
   
+  // 播放射击音效
+  AudioSystem.playShoot(weaponId);
+  
   // 寻找最近敌人
   let target = null;
   let minDist = Infinity;
@@ -1635,37 +3555,37 @@ function fireWeapon(weaponId, weapon, weaponData) {
     case 'textbook':
       for (let i = 0; i < count; i++) {
         const spread = (i - count/2) * 0.2;
-        createBullet(player.x, player.y, angle + spread, weapon);
+        createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
       }
       break;
       
     case 'chalk':
       for (let i = 0; i < 3; i++) {
         const spread = (i - 1) * 0.3;
-        createBullet(player.x, player.y, angle + spread, weapon);
+        createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
       }
       break;
       
     case 'ruler':
       for (let i = 0; i < 4; i++) {
         const rotation = (Date.now() / 1000) + (i * Math.PI / 2);
-        createBullet(player.x, player.y, rotation, weapon, true);
+        createBullet(player.x, player.y, rotation, weapon, true, weaponId);
       }
       break;
       
     case 'basketball':
-      createBullet(player.x, player.y, angle, weapon);
+      createBullet(player.x, player.y, angle, weapon, false, weaponId);
       break;
       
     case 'eraser':
-      createBullet(player.x, player.y, angle, weapon);
+      createBullet(player.x, player.y, angle, weapon, false, weaponId);
       break;
       
     case 'lunchBox':
       // 饭盒重击 - 短距离高伤害
       for (let i = 0; i < count; i++) {
         const spread = (i - count/2) * 0.15;
-        const bullet = createBullet(player.x, player.y, angle + spread, weapon);
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
         if (bullet) {
           bullet.life = 0.4; // 短距离
           bullet.stunChance = 0.3; // 眩晕概率
@@ -1677,7 +3597,7 @@ function fireWeapon(weaponId, weapon, weaponData) {
       // 水球乱斗 - 减速效果
       for (let i = 0; i < count; i++) {
         const spread = (i - count/2) * 0.25;
-        const bullet = createBullet(player.x, player.y, angle + spread, weapon);
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
         if (bullet) {
           bullet.slowEffect = true;
         }
@@ -1686,40 +3606,55 @@ function fireWeapon(weaponId, weapon, weaponData) {
       
     case 'firecracker':
       // 鞭炮轰炸 - 范围爆炸
-      createBullet(player.x, player.y, angle, weapon);
+      createBullet(player.x, player.y, angle, weapon, false, weaponId);
       // 额外散射小鞭炮
       for (let i = 0; i < 2; i++) {
         const spread = (Math.random() - 0.5) * 0.5;
-        createBullet(player.x, player.y, angle + spread, weapon);
+        createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
       }
       break;
   }
 }
 
-function createBullet(x, y, angle, weapon, orbit = false) {
+function createBullet(x, y, angle, weapon, orbit = false, weaponId = null) {
   // 检查双倍射击
   if (gameState.unlocks.doubleShot && Math.random() < (gameState.doubleShotChance || 0.25)) {
     // 创建额外子弹
     setTimeout(() => {
-      createSingleBullet(x, y, angle, weapon, orbit);
+      createSingleBullet(x, y, angle, weapon, orbit, weaponId);
     }, 50);
   }
   
-  return createSingleBullet(x, y, angle, weapon, orbit);
+  return createSingleBullet(x, y, angle, weapon, orbit, weaponId);
 }
 
-function createSingleBullet(x, y, angle, weapon, orbit = false) {
+function createSingleBullet(x, y, angle, weapon, orbit = false, weaponId = null) {
+  // 获取武器精通加成
+  const masteryBonuses = weaponId ? WeaponMastery.getBonuses(weaponId) : { damage: 1, speed: 1, pierce: 0, critChance: 0 };
+  
+  // 计算最终伤害（应用精通加成）
+  let finalDamage = gameState.player.damage * weapon.damage * masteryBonuses.damage;
+  
+  // 暴击判定
+  const critChance = (gameState.player.critChance || 0) + masteryBonuses.critChance;
+  const isCrit = Math.random() < critChance;
+  if (isCrit) {
+    finalDamage *= 2;
+  }
+  
   const bullet = {
     x, y,
-    vx: Math.cos(angle) * CONFIG.bulletSpeed * weapon.speed,
-    vy: Math.sin(angle) * CONFIG.bulletSpeed * weapon.speed,
-    damage: gameState.player.damage * weapon.damage,
+    vx: Math.cos(angle) * CONFIG.bulletSpeed * weapon.speed * masteryBonuses.speed,
+    vy: Math.sin(angle) * CONFIG.bulletSpeed * weapon.speed * masteryBonuses.speed,
+    damage: finalDamage,
     weapon,
+    weaponId, // 记录武器ID用于精通系统
     orbit,
     orbitAngle: angle,
-    pierce: (weapon.pierce || 0) + (gameState.extraPierce || 0),
+    pierce: (weapon.pierce || 0) + (gameState.extraPierce || 0) + masteryBonuses.pierce,
     hitEnemies: new Set(),
-    life: 1
+    life: 1,
+    isCrit // 记录是否暴击
   };
   gameState.bullets.push(bullet);
   return bullet;
@@ -1755,6 +3690,9 @@ function activateRage() {
   player.rageActive = true;
   player.rageEndTime = now + CONFIG.rageDuration;
   player.rage = 0;
+  
+  // 播放暴走音效
+  AudioSystem.playRage();
   
   document.getElementById('rageIndicator').classList.add('active');
   
@@ -1877,6 +3815,9 @@ function pickupItem(item) {
 
 function activateTimeFreeze(duration) {
   showEffectIndicator('⏱️ 时间停止!', '#5f27cd');
+  
+  // 播放时间停止音效
+  AudioSystem.playTimeFreeze();
   
   // 冻结所有敌人
   gameState.timeFrozen = true;
@@ -2054,6 +3995,13 @@ function createRageEffect() {
 
 // ==================== 敌人逻辑 ====================
 function updateEnemySpawning(deltaTime) {
+  // Boss战期间暂停普通敌人生成（但Boss可以召唤）
+  if (gameState.bossFightActive && gameState.boss) {
+    // 检查波次更新（用于触发Boss）
+    updateWaveSystem();
+    return;
+  }
+  
   // 计算当前难度系数（基于波次和时间）
   const gameTime = Date.now() - gameState.startTime;
   const waveBonus = (gameState.wave - 1) * 0.3;
@@ -2084,36 +4032,72 @@ function updateWaveSystem() {
     gameState.wave++;
     gameState.nextWaveTime = gameState.wave * CONFIG.waveInterval;
     
-    // 波次提升提示
-    showWaveNotification(gameState.wave);
+    // 检查是否是Boss波次
+    if (BOSS_SPAWN_WAVES.includes(gameState.wave)) {
+      showWaveNotification(gameState.wave, true);
+    } else {
+      // 普通波次提升提示
+      showWaveNotification(gameState.wave, false);
+    }
     
-    // 每3波给一个奖励
-    if (gameState.wave % 3 === 0) {
+    // 每3波给一个奖励（Boss波次除外）
+    if (gameState.wave % 3 === 0 && !BOSS_SPAWN_WAVES.includes(gameState.wave)) {
       spawnWaveReward();
     }
   }
 }
 
-function showWaveNotification(wave) {
+function showWaveNotification(wave, isBossWave) {
   const notification = document.createElement('div');
-  notification.style.cssText = `
-    position: fixed;
-    top: 25%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 42px;
-    font-weight: 900;
-    color: #ffa502;
-    text-shadow: 0 0 30px #ffa502, 0 0 60px #ff4757;
-    pointer-events: none;
-    z-index: 1000;
-    animation: wavePulse 2s ease-out forwards;
-    text-align: center;
-  `;
-  notification.innerHTML = `第 ${wave} 波<br><span style="font-size:18px">敌人变得更强大了!</span>`;
+  
+  if (isBossWave) {
+    const bossIds = ['disciplinarian', 'principal', 'lunchLady'];
+    const bossIndex = BOSS_SPAWN_WAVES.indexOf(wave);
+    const bossId = bossIds[bossIndex];
+    const bossConfig = BOSSES[bossId];
+    
+    notification.style.cssText = `
+      position: fixed;
+      top: 25%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px;
+      font-weight: 900;
+      color: ${bossConfig.color};
+      text-shadow: 0 0 40px ${bossConfig.color}, 0 0 80px #ff3838;
+      pointer-events: none;
+      z-index: 1000;
+      animation: bossWarning 3s ease-out forwards;
+      text-align: center;
+    `;
+    notification.innerHTML = `
+      <div style="font-size:72px;margin-bottom:10px">${bossConfig.emoji}</div>
+      <div>第 ${wave} 波 - BOSS战!</div>
+      <div style="font-size:22px;color:#fff;margin-top:10px">${bossConfig.name}即将登场</div>
+      <div style="font-size:16px;color:#aaa">${bossConfig.title}</div>
+    `;
+    ScreenShake.shake(10, 500);
+  } else {
+    notification.style.cssText = `
+      position: fixed;
+      top: 25%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 42px;
+      font-weight: 900;
+      color: #ffa502;
+      text-shadow: 0 0 30px #ffa502, 0 0 60px #ff4757;
+      pointer-events: none;
+      z-index: 1000;
+      animation: wavePulse 2s ease-out forwards;
+      text-align: center;
+    `;
+    notification.innerHTML = `第 ${wave} 波<br><span style="font-size:18px">敌人变得更强大了!</span>`;
+  }
+  
   document.body.appendChild(notification);
   
-  setTimeout(() => notification.remove(), 2500);
+  setTimeout(() => notification.remove(), isBossWave ? 4000 : 2500);
 }
 
 function spawnWaveReward() {
@@ -2205,110 +4189,226 @@ function spawnEnemyAt(x, y, type) {
 }
 
 // ==================== Boss系统 ====================
-function updateBoss(deltaTime) {
-  // 检查是否应该生成Boss
-  if (!gameState.boss && Date.now() - gameState.startTime > gameState.nextBossSpawn) {
-    spawnBoss();
-  }
+
+// 检查是否应该生成Boss（基于波次）
+function checkBossSpawn() {
+  const currentWave = gameState.wave;
   
-  if (!gameState.boss) return;
+  // 检查是否是Boss波次
+  if (!BOSS_SPAWN_WAVES.includes(currentWave)) return;
+  
+  // 检查该Boss是否已经被击败过（防止重复生成）
+  const bossIndex = BOSS_SPAWN_WAVES.indexOf(currentWave);
+  const bossIds = ['disciplinarian', 'principal', 'lunchLady'];
+  const bossId = bossIds[bossIndex];
+  
+  if (gameState.bossDefeated.includes(bossId)) return;
+  
+  // 生成Boss
+  spawnBoss(bossId);
+}
+
+function spawnBoss(bossId) {
+  const bossConfig = BOSSES[bossId];
+  if (!bossConfig) return;
+  
+  const player = gameState.player;
+  const angle = Math.random() * Math.PI * 2;
+  const distance = 500;
+  
+  // 根据波次增加Boss血量
+  const waveMultiplier = 1 + (gameState.wave / 10) * 0.3;
+  
+  gameState.boss = {
+    id: bossId,
+    x: player.x + Math.cos(angle) * distance,
+    y: player.y + Math.sin(angle) * distance,
+    hp: bossConfig.baseHp * waveMultiplier,
+    maxHp: bossConfig.baseHp * waveMultiplier,
+    damage: bossConfig.damage,
+    speed: bossConfig.speed,
+    size: bossConfig.size,
+    emoji: bossConfig.emoji,
+    name: bossConfig.name,
+    title: bossConfig.title,
+    color: bossConfig.color,
+    phase: 0,
+    phaseData: bossConfig.phases[0],
+    vx: 0,
+    vy: 0,
+    skills: JSON.parse(JSON.stringify(bossConfig.skills)), // 深拷贝技能
+    lastSkillUse: {}
+  };
+  
+  // 初始化技能冷却
+  bossConfig.skills.forEach((skill, index) => {
+    gameState.boss.lastSkillUse[index] = Date.now();
+  });
+  
+  // 暂停普通敌人生成
+  gameState.bossFightActive = true;
+  
+  // 播放Boss战BGM
+  BGM.playBoss();
+  
+  // 显示Boss出现警告
+  showBossWarning(bossConfig);
+  
+  // 更新Boss血条UI
+  updateBossHealthBar();
+}
+
+function updateBoss(deltaTime) {
+  if (!gameState.boss) {
+    // 检查是否需要生成Boss
+    checkBossSpawn();
+    return;
+  }
   
   const boss = gameState.boss;
   const player = gameState.player;
   const now = Date.now();
+  const bossConfig = BOSSES[boss.id];
   
   // 计算当前阶段
   const hpPercent = boss.hp / boss.maxHp;
-  let currentPhase = BOSS_CONFIG.phases[0];
-  for (const phase of BOSS_CONFIG.phases) {
-    if (hpPercent <= phase.hpPercent) {
-      currentPhase = phase;
+  let currentPhaseIndex = 0;
+  for (let i = 0; i < bossConfig.phases.length; i++) {
+    if (hpPercent <= bossConfig.phases[i].hpPercent) {
+      currentPhaseIndex = i;
     }
   }
-  boss.phase = currentPhase;
   
-  // Boss移动 - 始终朝向玩家
+  // 阶段切换检测
+  if (currentPhaseIndex !== boss.phase) {
+    boss.phase = currentPhaseIndex;
+    boss.phaseData = bossConfig.phases[currentPhaseIndex];
+    showBossPhaseChange(boss);
+  }
+  
+  const currentPhase = bossConfig.phases[currentPhaseIndex];
+  
+  // Boss移动 - 始终朝向玩家，但保持一定距离
+  const distToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
   const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
-  boss.vx = Math.cos(angle) * boss.speed * currentPhase.multiplier;
-  boss.vy = Math.sin(angle) * boss.speed * currentPhase.multiplier;
+  
+  // 如果距离太近，后退；如果太远，靠近
+  let moveSpeed = boss.speed * currentPhase.multiplier;
+  if (distToPlayer < 100) {
+    boss.vx = -Math.cos(angle) * moveSpeed;
+    boss.vy = -Math.sin(angle) * moveSpeed;
+  } else if (distToPlayer > 200) {
+    boss.vx = Math.cos(angle) * moveSpeed;
+    boss.vy = Math.sin(angle) * moveSpeed;
+  } else {
+    // 保持距离，横向移动
+    boss.vx = Math.cos(angle + Math.PI/2) * moveSpeed * 0.5;
+    boss.vy = Math.sin(angle + Math.PI/2) * moveSpeed * 0.5;
+  }
   
   boss.x += boss.vx;
   boss.y += boss.vy;
   
-  // Boss技能
-  for (const skill of BOSS_CONFIG.skills) {
-    if (now - skill.lastUsed > skill.cooldown / currentPhase.multiplier) {
+  // Boss技能释放
+  bossConfig.skills.forEach((skill, index) => {
+    const lastUsed = boss.lastSkillUse[index] || 0;
+    const cooldown = skill.cooldown / currentPhase.multiplier;
+    
+    if (now - lastUsed > cooldown) {
       skill.execute(boss, player);
-      skill.lastUsed = now;
+      boss.lastSkillUse[index] = now;
     }
-  }
+  });
   
   // 碰撞检测 - Boss攻击玩家
-  const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
-  if (dist < 50 + boss.size) {
+  if (distToPlayer < 40 + boss.size) {
     if (!gameState.activeEffects.shield.active) {
       let damage = boss.damage * currentPhase.multiplier;
       damage = applyDefense(damage);
       player.hp -= damage;
       gameState.damageTaken += damage;
       gameState.noDamageRun = false;
+      
+      // 显示伤害数字
+      FloatingText.add(player.x, player.y - 30, `-${Math.floor(damage)}`, '#ff3838', 18);
     }
     
     // 击退
-    boss.x -= Math.cos(angle) * 30;
-    boss.y -= Math.sin(angle) * 30;
+    boss.x -= Math.cos(angle) * 20;
+    boss.y -= Math.sin(angle) * 20;
   }
   
-  // 更新敌人子弹
+  // 更新Boss血条
+  updateBossHealthBar();
+  
+  // 更新危险区域
+  updateHazardZones();
+  
+  // 更新敌人子弹（包括追踪弹）
   updateEnemyBullets(deltaTime);
 }
 
-function spawnBoss() {
-  const player = gameState.player;
-  const angle = Math.random() * Math.PI * 2;
-  const distance = 500;
+function showBossWarning(bossConfig) {
+  // 播放Boss警告音效
+  AudioSystem.playBossWarning();
   
-  gameState.boss = {
-    x: player.x + Math.cos(angle) * distance,
-    y: player.y + Math.sin(angle) * distance,
-    hp: BOSS_CONFIG.baseHp * (1 + gameState.bossKilled * 0.5),
-    maxHp: BOSS_CONFIG.baseHp * (1 + gameState.bossKilled * 0.5),
-    damage: BOSS_CONFIG.damage,
-    speed: BOSS_CONFIG.speed,
-    size: BOSS_CONFIG.size,
-    phase: BOSS_CONFIG.phases[0],
-    vx: 0,
-    vy: 0,
-    skills: JSON.parse(JSON.stringify(BOSS_CONFIG.skills)) // 深拷贝技能
-  };
-  
-  // 显示Boss出现警告
-  showBossWarning();
-}
-
-function showBossWarning() {
   const warning = document.createElement('div');
+  warning.className = 'boss-warning';
   warning.style.cssText = `
     position: fixed;
     top: 30%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 36px;
+    font-size: 42px;
     font-weight: 900;
-    color: #ff3838;
-    text-shadow: 0 0 30px #ff3838;
+    color: ${bossConfig.color};
+    text-shadow: 0 0 40px ${bossConfig.color}, 0 0 80px ${bossConfig.color};
     pointer-events: none;
     z-index: 1000;
-    animation: bossWarning 3s ease-out forwards;
     text-align: center;
+    animation: bossWarning 4s ease-out forwards;
   `;
-  warning.innerHTML = '⚠️ 教导主任来了! ⚠️<br><span style="font-size:18px">准备战斗!</span>';
+  warning.innerHTML = `
+    <div style="font-size:60px;margin-bottom:10px">${bossConfig.emoji}</div>
+    <div>⚠️ ${bossConfig.name}来了! ⚠️</div>
+    <div style="font-size:20px;color:#fff;margin-top:10px">${bossConfig.title}</div>
+    <div style="font-size:16px;color:#aaa;margin-top:5px">准备战斗!</div>
+  `;
   document.body.appendChild(warning);
   
-  setTimeout(() => warning.remove(), 3000);
+  // 屏幕震动
+  ScreenShake.shake(20, 1000);
+  
+  setTimeout(() => warning.remove(), 4000);
 }
 
-function showBossSkillEffect(x, y, text) {
+function showBossPhaseChange(boss) {
+  const phaseNames = ['第一阶段', '第二阶段', '狂暴阶段', '绝望阶段'];
+  const phaseName = phaseNames[boss.phase] || '未知阶段';
+  
+  const effect = document.createElement('div');
+  effect.style.cssText = `
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    font-weight: 900;
+    color: ${boss.color};
+    text-shadow: 0 0 30px ${boss.color};
+    pointer-events: none;
+    z-index: 999;
+    animation: phaseChange 2s ease-out forwards;
+  `;
+  effect.textContent = `${phaseName}`;
+  document.body.appendChild(effect);
+  
+  ScreenShake.shake(10, 500);
+  
+  setTimeout(() => effect.remove(), 2000);
+}
+
+function showBossSkillEffect(x, y, text, color = '#ff6b6b') {
   const effect = document.createElement('div');
   effect.style.cssText = `
     position: absolute;
@@ -2316,11 +4416,12 @@ function showBossSkillEffect(x, y, text) {
     top: ${y - camera.y}px;
     font-size: 20px;
     font-weight: bold;
-    color: #ff6b6b;
-    text-shadow: 0 0 10px #ff6b6b;
+    color: ${color};
+    text-shadow: 0 0 10px ${color}, 0 0 20px ${color};
     pointer-events: none;
     z-index: 100;
     animation: floatUp 1.5s ease-out forwards;
+    white-space: nowrap;
   `;
   effect.textContent = text;
   document.getElementById('gameCanvas').parentElement.appendChild(effect);
@@ -2328,9 +4429,96 @@ function showBossSkillEffect(x, y, text) {
   setTimeout(() => effect.remove(), 1500);
 }
 
+function updateBossHealthBar() {
+  const boss = gameState.boss;
+  if (!boss) {
+    const existingBar = document.getElementById('bossHealthBar');
+    if (existingBar) existingBar.remove();
+    return;
+  }
+  
+  let healthBar = document.getElementById('bossHealthBar');
+  if (!healthBar) {
+    healthBar = document.createElement('div');
+    healthBar.id = 'bossHealthBar';
+    healthBar.style.cssText = `
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      background: rgba(0,0,0,0.8);
+      border: 2px solid ${boss.color};
+      border-radius: 10px;
+      padding: 10px 15px;
+      z-index: 200;
+      box-shadow: 0 0 20px ${boss.color};
+    `;
+    document.body.appendChild(healthBar);
+  }
+  
+  const hpPercent = (boss.hp / boss.maxHp * 100).toFixed(1);
+  const phaseNames = ['一', '二', '三', '四'];
+  const phaseName = phaseNames[boss.phase] || '?';
+  
+  healthBar.style.borderColor = boss.color;
+  healthBar.style.boxShadow = `0 0 20px ${boss.color}`;
+  
+  healthBar.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:28px">${boss.emoji}</span>
+        <div>
+          <div style="font-weight:bold;color:${boss.color};font-size:16px">${boss.name}</div>
+          <div style="font-size:12px;color:#aaa">${boss.title} · 第${phaseName}阶段</div>
+        </div>
+      </div>
+      <div style="font-size:14px;color:#fff;font-weight:bold">${Math.floor(boss.hp)}/${boss.maxHp}</div>
+    </div>
+    <div style="width:100%;height:12px;background:rgba(0,0,0,0.5);border-radius:6px;overflow:hidden">
+      <div style="width:${hpPercent}%;height:100%;background:linear-gradient(90deg,${boss.color},#ff6b6b);transition:width 0.3s;box-shadow:0 0 10px ${boss.color}"></div>
+    </div>
+  `;
+}
+
+function updateHazardZones() {
+  if (!gameState.hazardZones) return;
+  
+  const now = Date.now();
+  gameState.hazardZones = gameState.hazardZones.filter(zone => {
+    // 检查玩家是否在危险区域内
+    const dist = Math.hypot(gameState.player.x - zone.x, gameState.player.y - zone.y);
+    if (dist < zone.radius && !gameState.activeEffects.shield.active) {
+      // 每秒造成伤害
+      if (Math.random() < 0.05) { // 约每秒3次伤害
+        gameState.player.hp -= zone.damage;
+        gameState.damageTaken += zone.damage;
+        gameState.noDamageRun = false;
+        FloatingText.add(gameState.player.x, gameState.player.y - 30, `-${zone.damage}`, zone.color, 16);
+      }
+    }
+    
+    return zone.endTime > now;
+  });
+}
+
 function updateEnemyBullets(deltaTime) {
   gameState.bullets = gameState.bullets.filter(bullet => {
     if (!bullet.isEnemyBullet) return true;
+    
+    // 追踪弹逻辑
+    if (bullet.homing && bullet.target && !bullet.target.dead) {
+      const angleToTarget = Math.atan2(bullet.target.y - bullet.y, bullet.target.x - bullet.x);
+      bullet.vx += Math.cos(angleToTarget) * bullet.homingStrength;
+      bullet.vy += Math.sin(angleToTarget) * bullet.homingStrength;
+      
+      // 限制最大速度
+      const speed = Math.hypot(bullet.vx, bullet.vy);
+      if (speed > 5) {
+        bullet.vx = (bullet.vx / speed) * 5;
+        bullet.vy = (bullet.vy / speed) * 5;
+      }
+    }
     
     bullet.x += bullet.vx;
     bullet.y += bullet.vy;
@@ -2338,10 +4526,25 @@ function updateEnemyBullets(deltaTime) {
     
     // 检测与玩家碰撞
     const dist = Math.hypot(gameState.player.x - bullet.x, gameState.player.y - bullet.y);
-    if (dist < 30 && !gameState.activeEffects.shield.active) {
-      gameState.player.hp -= bullet.damage;
-      gameState.damageTaken += bullet.damage;
+    if (dist < 25 + (bullet.size || 10) && !gameState.activeEffects.shield.active) {
+      let damage = bullet.damage;
+      
+      // 特殊效果
+      if (bullet.effect === 'burn') {
+        gameState.activeEffects.burn = { active: true, endTime: Date.now() + 3000, damage: 5 };
+      } else if (bullet.effect === 'freeze') {
+        gameState.activeEffects.slow = { active: true, endTime: Date.now() + 2000, multiplier: 0.3 };
+      } else if (bullet.effect === 'slow') {
+        gameState.activeEffects.slow = { active: true, endTime: Date.now() + 4000, multiplier: 0.5 };
+      }
+      
+      damage = applyDefense(damage);
+      gameState.player.hp -= damage;
+      gameState.damageTaken += damage;
       gameState.noDamageRun = false;
+      
+      FloatingText.add(gameState.player.x, gameState.player.y - 30, `-${Math.floor(damage)}`, '#ff3838', 16);
+      
       return false;
     }
     
@@ -2351,25 +4554,176 @@ function updateEnemyBullets(deltaTime) {
 
 function killBoss() {
   const boss = gameState.boss;
+  if (!boss) return;
+  
+  const bossConfig = BOSSES[boss.id];
+  
+  // 播放Boss死亡音效
+  AudioSystem.playBossDeath();
+  
+  // 记录击败
+  gameState.bossDefeated.push(boss.id);
+  gameState.bossKilled++;
   
   // 大量经验
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     gameState.expOrbs.push({
-      x: boss.x + (Math.random() - 0.5) * 100,
-      y: boss.y + (Math.random() - 0.5) * 100,
-      exp: Math.floor(BOSS_CONFIG.exp / 20),
-      vx: (Math.random() - 0.5) * 4,
-      vy: (Math.random() - 0.5) * 4
+      x: boss.x + (Math.random() - 0.5) * 150,
+      y: boss.y + (Math.random() - 0.5) * 150,
+      exp: Math.floor(bossConfig.exp / 30),
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6
     });
   }
   
-  // 必定掉落道具
-  const itemIds = Object.keys(ITEMS);
-  const randomItem = itemIds[Math.floor(Math.random() * itemIds.length)];
-  spawnItem(boss.x, boss.y, randomItem);
+  // Boss奖励 - 解锁武器或强化
+  const rewards = BOSS_REWARDS[boss.id];
+  if (rewards) {
+    rewards.forEach((reward, index) => {
+      setTimeout(() => {
+        if (WEAPONS[reward]) {
+          // 解锁武器
+          if (!gameState.weapons[reward].unlocked) {
+            gameState.weapons[reward].unlocked = true;
+            gameState.weapons[reward].level = 1;
+            showRewardEffect(boss.x, boss.y, `解锁: ${WEAPONS[reward].name}`, WEAPONS[reward].emoji);
+          }
+        } else {
+          // 属性强化
+          applyBossReward(reward);
+          const rewardNames = { damage: '攻击力+20%', attackSpeed: '攻速+15%', speed: '移速+10%', hp: '生命+50', crit: '暴击+10%', defense: '防御+10%' };
+          showRewardEffect(boss.x, boss.y, rewardNames[reward] || reward, '✨');
+        }
+      }, index * 500);
+    });
+  }
+  
+  // 必定掉落高级道具
+  const rareItems = ['healthPackLarge', 'shield', 'bomb', 'revive', 'timeFreeze'];
+  rareItems.forEach((itemId, index) => {
+    setTimeout(() => {
+      spawnItemAt(boss.x + (Math.random() - 0.5) * 100, boss.y + (Math.random() - 0.5) * 100, itemId);
+    }, index * 300);
+  });
   
   // 爆炸特效
-  for (let i = 0; i < 30; i++) {
+  VisualEffects.createExplosion(boss.x, boss.y, boss.color, 50);
+  ScreenShake.shake(25, 1500);
+  
+  // 显示击败信息
+  showBossDefeatMessage(boss);
+  
+  // 清除Boss
+  gameState.boss = null;
+  gameState.bossFightActive = false;
+  
+  // 切换回战斗BGM
+  BGM.playBattle();
+  
+  // 移除血条
+  const healthBar = document.getElementById('bossHealthBar');
+  if (healthBar) healthBar.remove();
+}
+
+function showRewardEffect(x, y, text, emoji) {
+  const effect = document.createElement('div');
+  effect.style.cssText = `
+    position: absolute;
+    left: ${x - camera.x}px;
+    top: ${y - camera.y - 50}px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700;
+    pointer-events: none;
+    z-index: 100;
+    animation: rewardFloat 2s ease-out forwards;
+    text-align: center;
+  `;
+  effect.innerHTML = `<div style="font-size:32px">${emoji}</div><div>${text}</div>`;
+  document.getElementById('gameCanvas').parentElement.appendChild(effect);
+  
+  setTimeout(() => effect.remove(), 2000);
+}
+
+function applyBossReward(reward) {
+  switch(reward) {
+    case 'damage':
+      gameState.player.damage *= 1.2;
+      break;
+    case 'attackSpeed':
+      gameState.player.attackSpeed *= 1.15;
+      break;
+    case 'speed':
+      gameState.player.speed *= 1.1;
+      break;
+    case 'hp':
+      gameState.player.maxHp += 50;
+      gameState.player.hp += 50;
+      break;
+    case 'crit':
+      if (!gameState.unlocks.crit) {
+        gameState.unlocks.crit = true;
+      } else {
+        gameState.player.critChance = (gameState.player.critChance || 0) + 0.1;
+      }
+      break;
+    case 'defense':
+      if (!gameState.unlocks.defense) {
+        gameState.unlocks.defense = true;
+      }
+      break;
+  }
+}
+
+function showBossDefeatMessage(boss) {
+  const messages = {
+    disciplinarian: '教导主任被击败了！学校纪律暂时松懈...',
+    principal: '校长倒下了！学校陷入混乱！',
+    lunchLady: '食堂大妈被打败了！今天的午餐安全了！'
+  };
+  
+  const message = document.createElement('div');
+  message.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9);
+    border: 3px solid ${boss.color};
+    border-radius: 15px;
+    padding: 30px 50px;
+    text-align: center;
+    z-index: 1000;
+    animation: victoryPopup 0.5s ease-out;
+  `;
+  message.innerHTML = `
+    <div style="font-size:60px;margin-bottom:15px">${boss.emoji}</div>
+    <div style="font-size:28px;font-weight:bold;color:${boss.color};margin-bottom:10px">${boss.name}被击败!</div>
+    <div style="font-size:16px;color:#fff">${messages[boss.id] || 'Boss被击败!'}</div>
+  `;
+  document.body.appendChild(message);
+  
+  setTimeout(() => {
+    message.style.animation = 'fadeOut 0.5s ease forwards';
+    setTimeout(() => message.remove(), 500);
+  }, 3000);
+}
+
+// 在指定位置生成道具
+function spawnItemAt(x, y, itemId) {
+  const item = ITEMS[itemId];
+  if (!item) return;
+  
+  gameState.items.push({
+    x: x,
+    y: y,
+    id: itemId,
+    emoji: item.emoji,
+    color: item.color,
+    createdAt: Date.now()
+  });
+}
     gameState.particles.push({
       x: boss.x,
       y: boss.y,
@@ -2503,13 +4857,23 @@ function updateEnemies(deltaTime) {
   });
 }
 
-function killEnemy(enemy) {
+function killEnemy(enemy, weaponId) {
   const enemyType = ENEMY_TYPES[enemy.type];
+  
+  // 武器经验获取（击杀）
+  if (weaponId) {
+    WeaponMastery.addExp(weaponId, WeaponMastery.expPerKill * (enemy.isElite ? 3 : 1));
+    WeaponMastery.addKill(weaponId);
+  }
+  
+  // 播放击杀音效
+  AudioSystem.playKill();
   
   // 炸弹人爆炸效果
   if (enemy.explodeOnDeath) {
     VisualEffects.createExplosion(enemy.x, enemy.y, '#ffa502', 25);
     ScreenShake.shake(8, 300);
+    AudioSystem.playExplosion();
     
     // 对范围内所有敌人造成伤害
     gameState.enemies.forEach(other => {
@@ -2582,6 +4946,17 @@ function killEnemy(enemy) {
     gameState.rageKills++;
   }
   
+  // 创建死亡动画
+  const enemyType = ENEMY_TYPES[enemy.type];
+  DeathAnimation.create(
+    enemy.x, 
+    enemy.y, 
+    enemyType.emoji, 
+    enemy.color || '#ffa502', 
+    enemy.size,
+    enemy.isElite
+  );
+  
   // 增强版击杀特效
   const explosionColor = enemy.isElite ? '#ffd700' : (enemy.color || '#ffa502');
   VisualEffects.createExplosion(enemy.x, enemy.y, explosionColor, enemy.isElite ? 20 : 12);
@@ -2638,6 +5013,11 @@ function updateBullets(deltaTime) {
         enemy.hp -= bullet.damage;
         bullet.hitEnemies.add(enemy);
         
+        // 暴击时触发慢镜头
+        if (bullet.isCrit && Math.random() < 0.3) {
+          SlowMotion.trigger();
+        }
+        
         // 应用子弹特殊效果
         applyBulletEffects(bullet, enemy);
         
@@ -2647,8 +5027,13 @@ function updateBullets(deltaTime) {
           bullet.pierce--;
         }
         
+        // 武器经验获取（命中）
+        if (bullet.weaponId) {
+          WeaponMastery.addExp(bullet.weaponId, WeaponMastery.expPerHit);
+        }
+        
         if (enemy.hp <= 0) {
-          killEnemy(enemy);
+          killEnemy(enemy, bullet.weaponId);
         }
       }
     });
@@ -3063,6 +5448,9 @@ function render() {
   });
   ctx.globalAlpha = 1;
   
+  // 绘制死亡动画
+  DeathAnimation.render(ctx, camera);
+  
   // 绘制飘字
   FloatingText.render(ctx, camera);
   
@@ -3125,6 +5513,47 @@ function render() {
     ctx.fillText(enemyType.emoji, enemy.x, enemy.y);
   });
   
+  // 绘制危险区域
+  if (gameState.hazardZones) {
+    gameState.hazardZones.forEach(zone => {
+      const timeLeft = (zone.endTime - Date.now()) / 1000;
+      const alpha = Math.min(1, timeLeft / 2) * 0.4;
+      
+      // 区域外圈警告
+      ctx.beginPath();
+      ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+      ctx.fillStyle = zone.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.fill();
+      
+      // 内圈伤害区域
+      ctx.beginPath();
+      ctx.arc(zone.x, zone.y, zone.radius * 0.7, 0, Math.PI * 2);
+      ctx.fillStyle = zone.color + Math.floor(alpha * 1.5 * 255).toString(16).padStart(2, '0');
+      ctx.fill();
+      
+      // 旋转警示线
+      ctx.save();
+      ctx.translate(zone.x, zone.y);
+      ctx.rotate(Date.now() / 500);
+      ctx.strokeStyle = zone.color;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(zone.radius, 0);
+        ctx.stroke();
+        ctx.rotate(Math.PI / 2);
+      }
+      ctx.restore();
+      
+      // 中心图标
+      ctx.font = '30px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(zone.emoji, zone.x, zone.y);
+    });
+  }
+  
   // 绘制Boss
   if (gameState.boss) {
     const boss = gameState.boss;
@@ -3138,9 +5567,9 @@ function render() {
     // Boss血条
     const hpPercent = boss.hp / boss.maxHp;
     const gradient = ctx.createLinearGradient(boss.x - barWidth/2, 0, boss.x + barWidth/2, 0);
-    gradient.addColorStop(0, '#ff3838');
+    gradient.addColorStop(0, boss.color);
     gradient.addColorStop(0.5, '#ff6b6b');
-    gradient.addColorStop(1, '#ff3838');
+    gradient.addColorStop(1, boss.color);
     ctx.fillStyle = gradient;
     ctx.fillRect(boss.x - barWidth/2, boss.y - boss.size - 25, barWidth * hpPercent, barHeight);
     
@@ -3150,28 +5579,78 @@ function render() {
     ctx.strokeRect(boss.x - barWidth/2, boss.y - boss.size - 25, barWidth, barHeight);
     
     // Boss名字
-    ctx.fillStyle = '#ff6b6b';
+    ctx.fillStyle = boss.color;
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('👨‍🏫 教导主任', boss.x, boss.y - boss.size - 35);
+    ctx.fillText(`${boss.emoji} ${boss.name}`, boss.x, boss.y - boss.size - 35);
     
-    // Boss本体 - 带呼吸效果
+    // Boss本体 - 带呼吸效果和阶段光环
     const pulse = Math.sin(Date.now() / 200) * 3;
+    const phaseIntensity = 1 + boss.phase * 0.3;
+    
+    // 阶段光环
+    ctx.save();
+    ctx.shadowBlur = 30 * phaseIntensity;
+    ctx.shadowColor = boss.color;
+    ctx.beginPath();
+    ctx.arc(boss.x, boss.y, boss.size * 0.9 + pulse, 0, Math.PI * 2);
+    ctx.strokeStyle = boss.color;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+    
+    // Boss图标
     ctx.font = `${boss.size + pulse}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.shadowBlur = 20;
-    ctx.shadowColor = '#ff3838';
-    ctx.fillText('👨‍🏫', boss.x, boss.y);
+    ctx.shadowColor = boss.color;
+    ctx.fillText(boss.emoji, boss.x, boss.y);
     ctx.shadowBlur = 0;
     
-    // Boss阶段指示
+    // Boss阶段指示器
     const phaseColors = ['#2ed573', '#ffa502', '#ff4757', '#ff3838'];
-    const phaseIndex = Math.floor((1 - hpPercent) * 4);
-    ctx.fillStyle = phaseColors[Math.min(phaseIndex, 3)];
+    ctx.fillStyle = phaseColors[Math.min(boss.phase, 3)];
     ctx.beginPath();
-    ctx.arc(boss.x + boss.size, boss.y - boss.size, 6, 0, Math.PI * 2);
+    ctx.arc(boss.x + boss.size, boss.y - boss.size, 8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // 绘制Boss技能冷却指示（简化版）
+    const bossConfig = BOSSES[boss.id];
+    if (bossConfig && bossConfig.skills) {
+      const skillY = boss.y + boss.size + 20;
+      bossConfig.skills.forEach((skill, index) => {
+        const lastUsed = boss.lastSkillUse[index] || 0;
+        const cooldown = skill.cooldown / (boss.phaseData?.multiplier || 1);
+        const progress = Math.min(1, (Date.now() - lastUsed) / cooldown);
+        
+        const iconX = boss.x - 40 + index * 30;
+        
+        // 背景
+        ctx.fillStyle = progress >= 1 ? '#2ed573' : '#2d3436';
+        ctx.beginPath();
+        ctx.arc(iconX, skillY, 10, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // 冷却遮罩
+        if (progress < 1) {
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.beginPath();
+          ctx.arc(iconX, skillY, 10, -Math.PI/2, -Math.PI/2 + (1-progress) * Math.PI * 2);
+          ctx.lineTo(iconX, skillY);
+          ctx.fill();
+        }
+        
+        // 图标
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(skill.emoji, iconX, skillY);
+      });
+    }
   }
   
   // 绘制敌人子弹
@@ -3254,6 +5733,9 @@ function render() {
   ctx.shadowBlur = 0;
   
   ctx.restore();
+  
+  // 绘制慢镜头效果（在相机变换之外）
+  SlowMotion.render(ctx, canvas);
 }
 
 function drawGrid() {
