@@ -929,6 +929,199 @@
       transform: translateY(-2px);
       box-shadow: 0 5px 20px rgba(255, 71, 87, 0.4);
     }
+    
+    /* 移动端控制样式 */
+    .mobile-controls {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 200px;
+      pointer-events: none;
+      z-index: 200;
+    }
+    
+    .joystick-container {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      width: 120px;
+      height: 120px;
+      pointer-events: auto;
+    }
+    
+    .joystick-base {
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      position: relative;
+      backdrop-filter: blur(5px);
+    }
+    
+    .joystick-stick {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+      transition: transform 0.05s;
+    }
+    
+    .mobile-buttons {
+      position: absolute;
+      bottom: 30px;
+      right: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      pointer-events: auto;
+    }
+    
+    .mobile-btn {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(5px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    .mobile-btn:active, .mobile-btn.active {
+      transform: scale(0.95);
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .mobile-btn .btn-icon {
+      font-size: 28px;
+      margin-bottom: 2px;
+    }
+    
+    .mobile-btn .btn-text {
+      font-size: 10px;
+      font-weight: 600;
+    }
+    
+    .mobile-btn.rage-btn {
+      background: rgba(255, 56, 56, 0.3);
+      border-color: rgba(255, 56, 56, 0.5);
+    }
+    
+    .mobile-btn.rage-btn:active, .mobile-btn.rage-btn.active {
+      background: rgba(255, 56, 56, 0.6);
+      box-shadow: 0 0 20px rgba(255, 56, 56, 0.6);
+    }
+    
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+      .game-title {
+        font-size: 48px;
+      }
+      
+      .game-subtitle {
+        font-size: 18px;
+      }
+      
+      .character-select {
+        gap: 15px;
+      }
+      
+      .character-card {
+        padding: 20px;
+      }
+      
+      .character-avatar {
+        font-size: 48px;
+      }
+      
+      .character-name {
+        font-size: 16px;
+      }
+      
+      .start-btn {
+        padding: 15px 40px;
+        font-size: 20px;
+      }
+      
+      .hud {
+        padding: 10px 15px;
+      }
+      
+      .stat-bar {
+        padding: 6px 12px;
+      }
+      
+      .bar-container {
+        width: 80px;
+        height: 8px;
+      }
+      
+      .pill {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      
+      .skill-bar {
+        bottom: 180px;
+      }
+      
+      .hint {
+        display: none !important;
+      }
+    }
+    
+    /* 微信浏览器特殊处理 */
+    body.wechat .game-title {
+      font-size: 42px;
+    }
+    
+    /* 横屏提示 */
+    @media (max-width: 768px) and (orientation: portrait) {
+      .orientation-hint {
+        display: flex;
+      }
+    }
+    
+    .orientation-hint {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--bg-dark);
+      z-index: 10000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .orientation-hint .rotate-icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+      animation: rotatePhone 2s infinite;
+    }
+    
+    @keyframes rotatePhone {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
   </style>
 </head>
 <body>
@@ -975,7 +1168,7 @@
     
     <!-- 版本信息 -->
     <div class="version-info" style="margin: 15px 0; font-size: 14px; color: var(--text-dim); cursor: pointer;" onclick="VersionManager.showChangelog()">
-      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.2</strong></span>
+      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.3</strong></span>
       <span style="margin-left: 10px; font-size: 12px; opacity: 0.6;">点击查看更新日志</span>
     </div>
     
@@ -1048,6 +1241,28 @@
     WASD/方向键移动 | 自动攻击 | 空格键暴走 | P暂停
   </div>
 
+  <!-- 移动端控制 -->
+  <div class="mobile-controls" id="mobileControls" style="display: none;">
+    <!-- 虚拟摇杆 -->
+    <div class="joystick-container" id="mobileJoystick">
+      <div class="joystick-base" id="joystickBase">
+        <div class="joystick-stick" id="joystickStick"></div>
+      </div>
+    </div>
+    
+    <!-- 技能按钮 -->
+    <div class="mobile-buttons" id="mobileButtons">
+      <button class="mobile-btn rage-btn" id="rageBtn">
+        <span class="btn-icon">😡</span>
+        <span class="btn-text">暴走</span>
+      </button>
+      <button class="mobile-btn pause-btn" id="mobilePauseBtn">
+        <span class="btn-icon">⏸️</span>
+        <span class="btn-text">暂停</span>
+      </button>
+    </div>
+  </div>
+
   <!-- 升级弹窗 -->
   <div class="modal" id="upgradeModal">
     <div class="modal-content">
@@ -1085,9 +1300,17 @@
   </div>
 
   <script src="js/version.js"></script>
+  <script src="js/mobile.js"></script>
   <script src="js/game.js"></script>
   
   <!-- 版本显示 -->
-  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.2</div>
+  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.3</div>
+  
+  <!-- 横屏提示 -->
+  <div class="orientation-hint" id="orientationHint">
+    <div class="rotate-icon">📱</div>
+    <h2>请横屏游玩</h2>
+    <p>为了获得最佳游戏体验，请将手机横置</p>
+  </div>
 </body>
 </html>

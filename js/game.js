@@ -2969,6 +2969,16 @@ function init() {
   // UI事件
   setupUI();
   
+  // 初始化移动端控制
+  if (window.MobileControls) {
+    MobileControls.init();
+  }
+  
+  // 初始化性能优化
+  if (window.PerformanceOptimizer) {
+    PerformanceOptimizer.init();
+  }
+  
   // 开始游戏循环
   requestAnimationFrame(gameLoop);
 }
@@ -3477,13 +3487,20 @@ function updatePlayerMovement(deltaTime) {
   const player = gameState.player;
   let dx = 0, dy = 0;
   
+  // 键盘控制
   if (keys['KeyW'] || keys['ArrowUp']) dy -= 1;
   if (keys['KeyS'] || keys['ArrowDown']) dy += 1;
   if (keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
   if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
   
-  // 鼠标/触摸移动
-  if (mouse.down) {
+  // 移动端虚拟摇杆控制
+  if (window.MobileControls && MobileControls.joystick.active) {
+    const joystickInput = MobileControls.getInput();
+    dx = joystickInput.x;
+    dy = joystickInput.y;
+  }
+  // 鼠标/触摸移动（仅在非移动端）
+  else if (mouse.down && !gameState.isMobile) {
     const angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
     dx = Math.cos(angle);
     dy = Math.sin(angle);
