@@ -930,6 +930,169 @@
       box-shadow: 0 5px 20px rgba(255, 71, 87, 0.4);
     }
     
+    /* 新手引导样式 */
+    .tutorial-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .tutorial-highlight {
+      border: 3px solid var(--accent);
+      border-radius: 10px;
+      box-shadow: 0 0 30px var(--accent), inset 0 0 30px rgba(255, 165, 2, 0.3);
+      animation: highlightPulse 1.5s infinite;
+      pointer-events: none;
+      z-index: 10001;
+    }
+    
+    @keyframes highlightPulse {
+      0%, 100% { box-shadow: 0 0 30px var(--accent), inset 0 0 30px rgba(255, 165, 2, 0.3); }
+      50% { box-shadow: 0 0 50px var(--accent), inset 0 0 50px rgba(255, 165, 2, 0.5); }
+    }
+    
+    .tutorial-box {
+      background: var(--bg-card);
+      border: 2px solid var(--accent);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 400px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+      z-index: 10002;
+      animation: slideUp 0.4s ease;
+    }
+    
+    .tutorial-title {
+      font-size: 24px;
+      color: var(--accent);
+      margin-bottom: 15px;
+    }
+    
+    .tutorial-content {
+      font-size: 16px;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    
+    .tutorial-progress {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .progress-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transition: all 0.3s;
+    }
+    
+    .progress-dot.active {
+      background: var(--accent);
+      transform: scale(1.2);
+    }
+    
+    .tutorial-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .tutorial-btn {
+      padding: 10px 20px;
+      border-radius: 20px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .btn-prev {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+    
+    .btn-skip {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--text-dim);
+    }
+    
+    .btn-next {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+    }
+    
+    .tutorial-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .tutorial-complete {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10003;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    .complete-content {
+      background: var(--bg-card);
+      border: 2px solid var(--secondary);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+    }
+    
+    .complete-icon {
+      font-size: 60px;
+      margin-bottom: 15px;
+    }
+    
+    .complete-content h3 {
+      color: var(--secondary);
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    
+    /* 设置按钮样式 */
+    .settings-bar {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    
+    .settings-btn {
+      padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .settings-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: var(--accent);
+    }
+    
     /* 移动端控制样式 */
     .mobile-controls {
       position: fixed;
@@ -1166,9 +1329,19 @@
     
     <button class="start-btn" id="startBtn">开始游戏</button>
     
+    <!-- 设置按钮 -->
+    <div class="settings-bar" style="margin: 10px 0;">
+      <button class="settings-btn" id="muteBtn" onclick="AudioSystem.toggleMute()">
+        🔊 音效: 开
+      </button>
+      <button class="settings-btn" onclick="TutorialSystem.reset(); TutorialSystem.start()">
+        📖 查看教程
+      </button>
+    </div>
+    
     <!-- 版本信息 -->
     <div class="version-info" style="margin: 15px 0; font-size: 14px; color: var(--text-dim); cursor: pointer;" onclick="VersionManager.showChangelog()">
-      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.3</strong></span>
+      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.4</strong></span>
       <span style="margin-left: 10px; font-size: 12px; opacity: 0.6;">点击查看更新日志</span>
     </div>
     
@@ -1301,10 +1474,11 @@
 
   <script src="js/version.js"></script>
   <script src="js/mobile.js"></script>
+  <script src="js/tutorial.js"></script>
   <script src="js/game.js"></script>
   
   <!-- 版本显示 -->
-  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.3</div>
+  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.4</div>
   
   <!-- 横屏提示 -->
   <div class="orientation-hint" id="orientationHint">

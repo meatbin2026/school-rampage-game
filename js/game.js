@@ -1986,9 +1986,21 @@ const CONFIG = {
   comboTimeout: 3000,
   maxEnemies: 100,
   bossSpawnInterval: 180000, // 3分钟刷一次Boss
-  difficultyScaling: 0.08, // 难度递增系数
-  eliteChance: 0.05, // 精英怪出现概率
-  waveInterval: 60000 // 波次间隔
+  difficultyScaling: 0.06, // 难度递增系数（降低从0.08）
+  eliteChance: 0.03, // 精英怪出现概率（降低从0.05）
+  waveInterval: 60000, // 波次间隔
+  
+  // 新增：动态难度调整
+  earlyGameBuff: 1.3, // 前3波玩家伤害加成
+  midGameScaling: 0.08, // 中期难度系数
+  lateGameScaling: 0.12, // 后期难度系数
+  
+  // 新增：新手保护
+  newbieProtection: {
+    enabled: true,
+    duration: 30000, // 前30秒减伤
+    damageReduction: 0.5 // 50%减伤
+  }
 };
 
 // 角色配置
@@ -3136,10 +3148,16 @@ function showStartScreen() {
   document.getElementById('hud').style.display = 'none';
   document.getElementById('skillBar').style.display = 'none';
   document.getElementById('hint').style.display = 'none';
+  document.getElementById('mobileControls').style.display = 'none';
   gameState.running = false;
   
   // 加载并显示存档数据
   updateStartScreenStats();
+  
+  // 显示新手引导（首次游玩）
+  if (window.TutorialSystem && TutorialSystem.shouldShowTutorial()) {
+    setTimeout(() => TutorialSystem.start(), 500);
+  }
 }
 
 function updateStartScreenStats() {
