@@ -1,10 +1,20 @@
 // ==================== 版本管理系统 ====================
 const VersionManager = {
   // 当前版本号
-  currentVersion: '1.1',
+  currentVersion: '1.2',
   
   // 版本历史记录
   changelog: [
+    {
+      version: '1.2',
+      date: '2025-03-31',
+      title: '版本历史功能优化',
+      changes: [
+        '📋 版本更新弹窗现在显示所有历史版本',
+        '🎨 优化版本历史UI样式',
+        '🏷️ 当前版本高亮标记'
+      ]
+    },
     {
       version: '1.1',
       date: '2025-03-31',
@@ -71,19 +81,28 @@ const VersionManager = {
   
   // 渲染更新日志弹窗
   renderChangelogModal() {
-    const latest = this.getLatestVersion();
+    const allVersions = this.getAllVersions();
     return `
       <div class="changelog-modal" id="changelogModal">
         <div class="changelog-content">
           <div class="changelog-header">
-            <h2>🎉 版本更新 v${latest.version}</h2>
-            <span class="changelog-date">${latest.date}</span>
+            <h2>📋 版本更新历史</h2>
+            <span class="changelog-date">共 ${allVersions.length} 个版本</span>
           </div>
           <div class="changelog-body">
-            <h3>${latest.title}</h3>
-            <ul class="changelog-list">
-              ${latest.changes.map(change => `<li>${change}</li>`).join('')}
-            </ul>
+            ${allVersions.map(v => `
+              <div class="version-section ${v.version === this.currentVersion ? 'current' : ''}">
+                <div class="version-header">
+                  <span class="version-number">v${v.version}</span>
+                  <span class="version-date">${v.date}</span>
+                  ${v.version === this.currentVersion ? '<span class="version-badge">当前</span>' : ''}
+                </div>
+                <h4 class="version-title">${v.title}</h4>
+                <ul class="changelog-list">
+                  ${v.changes.map(change => `<li>${change}</li>`).join('')}
+                </ul>
+              </div>
+            `).join('')}
           </div>
           <button class="changelog-close" onclick="VersionManager.closeChangelog()">知道了</button>
         </div>

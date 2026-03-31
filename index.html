@@ -843,6 +843,54 @@
       margin-bottom: 15px;
     }
     
+    /* 版本历史样式 */
+    .version-section {
+      margin-bottom: 25px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+      border-left: 3px solid var(--text-dim);
+    }
+    
+    .version-section.current {
+      background: rgba(255, 165, 2, 0.1);
+      border-left-color: var(--accent);
+    }
+    
+    .version-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    
+    .version-number {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    
+    .version-date {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    
+    .version-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--accent);
+      color: var(--bg-dark);
+      border-radius: 10px;
+      font-weight: 700;
+    }
+    
+    .version-title {
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    
     .changelog-list {
       list-style: none;
       padding: 0;
@@ -850,8 +898,8 @@
     }
     
     .changelog-list li {
-      padding: 8px 0;
-      font-size: 14px;
+      padding: 6px 0;
+      font-size: 13px;
       color: var(--text-dim);
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
@@ -927,7 +975,7 @@
     
     <!-- 版本信息 -->
     <div class="version-info" style="margin: 15px 0; font-size: 14px; color: var(--text-dim); cursor: pointer;" onclick="VersionManager.showChangelog()">
-      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.1</strong></span>
+      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.2</strong></span>
       <span style="margin-left: 10px; font-size: 12px; opacity: 0.6;">点击查看更新日志</span>
     </div>
     
@@ -1040,6 +1088,6 @@
   <script src="js/game.js"></script>
   
   <!-- 版本显示 -->
-  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.1</div>
+  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.2</div>
 </body>
 </html>
