@@ -1046,8 +1046,20 @@ let gameState = {
     expBonus: false,
     itemLuck: false,
     crit: false,
-    pickup: false
+    pickup: false,
+    defense: false,
+    regen: false,
+    pierceShot: false,
+    doubleShot: false
   },
+  
+  // 额外属性
+  regenAmount: 0,
+  extraPierce: 0,
+  doubleShotChance: 0,
+  hasRevive: false,
+  timeFrozen: false,
+  timeFreezeEnd: 0,
   
   // 游戏对象
   enemies: [],
@@ -1191,7 +1203,10 @@ function startGame() {
     broom: { level: 0, unlocked: false },
     ink: { level: 0, unlocked: false },
     triangle: { level: 0, unlocked: false },
-    examPaper: { level: 0, unlocked: false }
+    examPaper: { level: 0, unlocked: false },
+    lunchBox: { level: 0, unlocked: false },
+    waterBalloon: { level: 0, unlocked: false },
+    firecracker: { level: 0, unlocked: false }
   };
   
   // 重置超武
@@ -1204,8 +1219,17 @@ function startGame() {
     expBonus: false,
     itemLuck: false,
     crit: false,
-    pickup: false
+    pickup: false,
+    defense: false,
+    regen: false,
+    pierceShot: false,
+    doubleShot: false
   };
+  
+  // 重置额外属性
+  gameState.regenAmount = 0;
+  gameState.extraPierce = 0;
+  gameState.doubleShotChance = 0;
   
   // 重置道具和效果
   gameState.items = [];
@@ -1222,10 +1246,25 @@ function startGame() {
   gameState.particles = [];
   gameState.expOrbs = [];
   
+  // 重置波次系统
+  gameState.wave = 1;
+  gameState.waveStartTime = 0;
+  gameState.nextWaveTime = CONFIG.waveInterval;
+  
+  // 重置时间冻结
+  gameState.timeFrozen = false;
+  gameState.timeFreezeEnd = 0;
+  
+  // 重置复活币
+  gameState.hasRevive = false;
+  
   // 重置统计
   gameState.kills = 0;
   gameState.totalDamage = 0;
   gameState.maxCombo = 0;
+  gameState.eliteKills = 0;
+  gameState.bomberKills = 0;
+  gameState.timeFreezes = 0;
   gameState.startTime = Date.now();
   gameState.lastTime = Date.now();
   gameState.running = true;
@@ -1361,6 +1400,33 @@ function togglePause() {
 }
 
 function gameOver() {
+  // 检查是否有复活币
+  if (gameState.hasRevive) {
+    gameState.hasRevive = false;
+    gameState.player.hp = gameState.player.maxHp * 0.5;
+    
+    // 清屏效果
+    VisualEffects.createExplosion(gameState.player.x, gameState.player.y, '#00d2d3', 30);
+    ScreenShake.shake(15, 500);
+    
+    // 击退周围敌人
+    gameState.enemies.forEach(enemy => {
+      const dist = Math.hypot(enemy.x - gameState.player.x, enemy.y - gameState.player.y);
+      if (dist < 200) {
+        const angle = Math.atan2(enemy.y - gameState.player.y, enemy.x - gameState.player.x);
+        enemy.x += Math.cos(angle) * 150;
+        enemy.y += Math.sin(angle) * 150;
+        enemy.hp -= 50;
+      }
+    });
+    
+    // 显示复活提示
+    showEffectIndicator('💎 复活!', '#00d2d3');
+    FloatingText.add(gameState.player.x, gameState.player.y - 50, '复活!', '#00d2d3', 28);
+    
+    return; // 不结束游戏
+  }
+  
   gameState.gameOver = true;
   gameState.running = false;
   
@@ -1465,8 +1531,28 @@ function update(deltaTime) {
   // 更新连击
   updateCombo(deltaTime);
   
+  // 生命恢复
+  updateHealthRegen(deltaTime);
+  
   // 更新UI
   updateUI();
+}
+
+function updateHealthRegen(deltaTime) {
+  if (gameState.unlocks.regen && gameState.player.hp < gameState.player.maxHp) {
+    if (!gameState.lastRegen || Date.now() - gameState.lastRegen > 1000) {
+      const regenAmount = gameState.regenAmount || 2;
+      gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + regenAmount);
+      gameState.lastRegen = Date.now();
+    }
+  }
+}
+
+function applyDefense(damage) {
+  if (gameState.unlocks.defense) {
+    return damage * 0.85; // 15%伤害减免
+  }
+  return damage;
 }
 
 // ==================== 玩家逻辑 ====================
@@ -1574,11 +1660,56 @@ function fireWeapon(weaponId, weapon, weaponData) {
     case 'eraser':
       createBullet(player.x, player.y, angle, weapon);
       break;
+      
+    case 'lunchBox':
+      // 饭盒重击 - 短距离高伤害
+      for (let i = 0; i < count; i++) {
+        const spread = (i - count/2) * 0.15;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon);
+        if (bullet) {
+          bullet.life = 0.4; // 短距离
+          bullet.stunChance = 0.3; // 眩晕概率
+        }
+      }
+      break;
+      
+    case 'waterBalloon':
+      // 水球乱斗 - 减速效果
+      for (let i = 0; i < count; i++) {
+        const spread = (i - count/2) * 0.25;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon);
+        if (bullet) {
+          bullet.slowEffect = true;
+        }
+      }
+      break;
+      
+    case 'firecracker':
+      // 鞭炮轰炸 - 范围爆炸
+      createBullet(player.x, player.y, angle, weapon);
+      // 额外散射小鞭炮
+      for (let i = 0; i < 2; i++) {
+        const spread = (Math.random() - 0.5) * 0.5;
+        createBullet(player.x, player.y, angle + spread, weapon);
+      }
+      break;
   }
 }
 
 function createBullet(x, y, angle, weapon, orbit = false) {
-  gameState.bullets.push({
+  // 检查双倍射击
+  if (gameState.unlocks.doubleShot && Math.random() < (gameState.doubleShotChance || 0.25)) {
+    // 创建额外子弹
+    setTimeout(() => {
+      createSingleBullet(x, y, angle, weapon, orbit);
+    }, 50);
+  }
+  
+  return createSingleBullet(x, y, angle, weapon, orbit);
+}
+
+function createSingleBullet(x, y, angle, weapon, orbit = false) {
+  const bullet = {
     x, y,
     vx: Math.cos(angle) * CONFIG.bulletSpeed * weapon.speed,
     vy: Math.sin(angle) * CONFIG.bulletSpeed * weapon.speed,
@@ -1586,9 +1717,12 @@ function createBullet(x, y, angle, weapon, orbit = false) {
     weapon,
     orbit,
     orbitAngle: angle,
-    pierce: weapon.pierce || 0,
-    hitEnemies: new Set()
-  });
+    pierce: (weapon.pierce || 0) + (gameState.extraPierce || 0),
+    hitEnemies: new Set(),
+    life: 1
+  };
+  gameState.bullets.push(bullet);
+  return bullet;
 }
 
 // ==================== 暴走系统 ====================
@@ -1948,7 +2082,7 @@ function updateWaveSystem() {
   
   if (gameTime > gameState.nextWaveTime) {
     gameState.wave++;
-    gameState.nextWaveTime = gameTime + CONFIG.waveInterval;
+    gameState.nextWaveTime = gameState.wave * CONFIG.waveInterval;
     
     // 波次提升提示
     showWaveNotification(gameState.wave);
@@ -2113,7 +2247,8 @@ function updateBoss(deltaTime) {
   const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
   if (dist < 50 + boss.size) {
     if (!gameState.activeEffects.shield.active) {
-      const damage = boss.damage * currentPhase.multiplier;
+      let damage = boss.damage * currentPhase.multiplier;
+      damage = applyDefense(damage);
       player.hp -= damage;
       gameState.damageTaken += damage;
       gameState.noDamageRun = false;
@@ -2280,6 +2415,26 @@ function updateEnemies(deltaTime) {
   const now = Date.now();
   
   gameState.enemies = gameState.enemies.filter(enemy => {
+    // 检查眩晕状态
+    if (enemy.stunned) {
+      if (now > enemy.stunEndTime) {
+        enemy.stunned = false;
+      } else {
+        // 眩晕时不移动，显示眩晕效果
+        FloatingText.add(enemy.x, enemy.y - enemy.size - 15, '💫', '#ffa502', 20);
+        // 眩晕时跳过移动逻辑
+        return enemy.hp > 0;
+      }
+    }
+    
+    // 检查减速状态恢复
+    if (enemy.slowed && now > enemy.slowEndTime) {
+      enemy.slowed = false;
+      if (enemy.originalSpeed) {
+        enemy.speed = enemy.originalSpeed;
+      }
+    }
+    
     // 特殊敌人：瞬移怪
     if (enemy.canTeleport && now - enemy.lastTeleport > 4000) {
       const distToPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
@@ -2325,7 +2480,8 @@ function updateEnemies(deltaTime) {
         enemy.y -= Math.sin(angle) * 80;
       } else {
         // 伤害玩家
-        const damage = enemy.damage * (player.rageActive ? 0.5 : 1);
+        let damage = enemy.damage * (player.rageActive ? 0.5 : 1);
+        damage = applyDefense(damage);
         player.hp -= damage;
         gameState.damageTaken += damage;
         gameState.noDamageRun = false;
@@ -2482,6 +2638,9 @@ function updateBullets(deltaTime) {
         enemy.hp -= bullet.damage;
         bullet.hitEnemies.add(enemy);
         
+        // 应用子弹特殊效果
+        applyBulletEffects(bullet, enemy);
+        
         if (bullet.pierce <= 0) {
           hit = true;
         } else {
@@ -2524,11 +2683,38 @@ function updateBullets(deltaTime) {
       }
     }
     
+    // 子弹生命周期检查
+    if (bullet.life !== undefined && bullet.life > 0) {
+      bullet.life -= deltaTime;
+      if (bullet.life <= 0) {
+        hit = true;
+      }
+    }
+    
     // 边界检查
     const outOfBounds = Math.abs(bullet.x - player.x) > 600 || Math.abs(bullet.y - player.y) > 600;
     
     return !hit && !outOfBounds;
   });
+}
+
+// 处理子弹特殊效果
+function applyBulletEffects(bullet, enemy) {
+  // 眩晕效果
+  if (bullet.stunChance && Math.random() < bullet.stunChance) {
+    enemy.stunned = true;
+    enemy.stunEndTime = Date.now() + 1500;
+    FloatingText.add(enemy.x, enemy.y - 30, '眩晕!', '#ffa502', 16);
+  }
+  
+  // 减速效果
+  if (bullet.slowEffect) {
+    enemy.slowed = true;
+    enemy.slowEndTime = Date.now() + 2000;
+    enemy.originalSpeed = enemy.originalSpeed || enemy.speed;
+    enemy.speed = enemy.originalSpeed * 0.5;
+    FloatingText.add(enemy.x, enemy.y - 30, '减速!', '#74b9ff', 14);
+  }
 }
 
 // ==================== 经验球逻辑 ====================
@@ -2591,9 +2777,16 @@ function showUpgradeModal() {
   gameState.paused = true;
   
   const options = [];
+  const playerLevel = gameState.player.level;
   const availableUpgrades = UPGRADES.filter(u => {
+    // 检查解锁等级
+    if (u.unlockLevel && playerLevel < u.unlockLevel) {
+      return false;
+    }
+    
     if (u.type === 'weapon') {
-      return !gameState.weapons[u.id].unlocked || gameState.weapons[u.id].level < 5;
+      // 检查武器是否已解锁且未满级
+      return !gameState.weapons[u.id].unlocked || gameState.weapons[u.id].level < WEAPONS[u.id].maxLevel;
     }
     return true;
   });
@@ -2648,6 +2841,13 @@ function selectUpgrade(type, id) {
         case 'pickup':
           gameState.unlocks.pickup = true;
           break;
+        case 'defense':
+          gameState.unlocks.defense = true;
+          break;
+        case 'regen':
+          gameState.unlocks.regen = true;
+          gameState.regenAmount = (gameState.regenAmount || 0) + 2;
+          break;
       }
       break;
       
@@ -2665,6 +2865,14 @@ function selectUpgrade(type, id) {
           break;
         case 'itemLuck':
           gameState.unlocks.itemLuck = true;
+          break;
+        case 'pierceShot':
+          gameState.unlocks.pierceShot = true;
+          gameState.extraPierce = (gameState.extraPierce || 0) + 1;
+          break;
+        case 'doubleShot':
+          gameState.unlocks.doubleShot = true;
+          gameState.doubleShotChance = (gameState.doubleShotChance || 0) + 0.25;
           break;
       }
       break;
