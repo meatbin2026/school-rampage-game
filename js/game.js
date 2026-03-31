@@ -1,6 +1,247 @@
 // 校园暴走 - 割草游戏核心逻辑
 // 基于开源项目 suvivor 修改完善
 
+// ==================== 视觉特效系统 ====================
+const VisualEffects = {
+  // 创建爆炸粒子
+  createExplosion(x, y, color, count = 15) {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+      const speed = 3 + Math.random() * 5;
+      gameState.particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.8 + Math.random() * 0.4,
+        color: color,
+        size: 3 + Math.random() * 6,
+        type: 'explosion',
+        decay: 0.02
+      });
+    }
+  },
+  
+  // 创建拖尾效果
+  createTrail(x, y, color, size = 3) {
+    gameState.particles.push({
+      x: x + (Math.random() - 0.5) * 10,
+      y: y + (Math.random() - 0.5) * 10,
+      vx: 0,
+      vy: 0,
+      life: 0.3,
+      color: color,
+      size: size,
+      type: 'trail',
+      decay: 0.05
+    });
+  },
+  
+  // 创建吸收效果
+  createAbsorb(x, y, targetX, targetY, color) {
+    const angle = Math.atan2(targetY - y, targetX - x);
+    gameState.particles.push({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * 8,
+      vy: Math.sin(angle) * 8,
+      life: 0.5,
+      color: color,
+      size: 4,
+      type: 'absorb',
+      targetX,
+      targetY
+    });
+  },
+  
+  // 创建升级光环
+  createLevelUpEffect(x, y) {
+    // 外圈扩散
+    for (let i = 0; i < 20; i++) {
+      const angle = (Math.PI * 2 * i) / 20;
+      gameState.particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * 6,
+        vy: Math.sin(angle) * 6,
+        life: 1,
+        color: '#2ed573',
+        size: 5,
+        type: 'ring',
+        decay: 0.01
+      });
+    }
+    // 上升粒子
+    for (let i = 0; i < 10; i++) {
+      gameState.particles.push({
+        x: x + (Math.random() - 0.5) * 40,
+        y: y,
+        vx: 0,
+        vy: -3 - Math.random() * 2,
+        life: 1.2,
+        color: '#7bed9f',
+        size: 3 + Math.random() * 3,
+        type: 'float',
+        decay: 0.015
+      });
+    }
+  },
+  
+  // 创建暴击特效
+  createCritEffect(x, y) {
+    // 星形爆发
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 * i) / 8;
+      gameState.particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * 10,
+        vy: Math.sin(angle) * 10,
+        life: 0.5,
+        color: '#ff3838',
+        size: 6,
+        type: 'crit',
+        decay: 0.03
+      });
+    }
+    // 中心闪光
+    gameState.particles.push({
+      x: x,
+      y: y,
+      vx: 0,
+      vy: 0,
+      life: 0.3,
+      color: '#ffffff',
+      size: 30,
+      type: 'flash',
+      decay: 0.1
+    });
+  },
+  
+  // 创建武器特效
+  createWeaponEffect(weaponId, x, y) {
+    const effects = {
+      textbook: { color: '#ffa502', count: 5 },
+      chalk: { color: '#dfe6e9', count: 8 },
+      ruler: { color: '#74b9ff', count: 3 },
+      basketball: { color: '#e17055', count: 10 },
+      eraser: { color: '#fd79a8', count: 6 },
+      broom: { color: '#00b894', count: 7 },
+      ink: { color: '#2d3436', count: 12 },
+      triangle: { color: '#0984e3', count: 4 },
+      examPaper: { color: '#dfe6e9', count: 15 }
+    };
+    
+    const effect = effects[weaponId];
+    if (effect) {
+      this.createExplosion(x, y, effect.color, effect.count);
+    }
+  }
+};
+
+// 飘字系统
+const FloatingText = {
+  texts: [],
+  
+  add(x, y, text, color, size = 16, duration = 1000) {
+    this.texts.push({
+      x, y, text, color, size,
+      createdAt: Date.now(),
+      duration,
+      vy: -2 - Math.random()
+    });
+  },
+  
+  update() {
+    const now = Date.now();
+    this.texts = this.texts.filter(t => {
+      const elapsed = now - t.createdAt;
+      if (elapsed > t.duration) return false;
+      
+      t.y += t.vy;
+      return true;
+    });
+  },
+  
+  render(ctx, camera) {
+    ctx.save();
+    this.texts.forEach(t => {
+      const elapsed = Date.now() - t.createdAt;
+      const progress = elapsed / t.duration;
+      const alpha = 1 - progress;
+      
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = t.color;
+      ctx.font = `bold ${t.size}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 2;
+      ctx.strokeText(t.text, t.x - camera.x, t.y - camera.y);
+      ctx.fillText(t.text, t.x - camera.x, t.y - camera.y);
+    });
+    ctx.restore();
+  }
+};
+
+// 背景效果
+const BackgroundEffects = {
+  particles: [],
+  
+  init() {
+    // 初始化背景粒子
+    for (let i = 0; i < 30; i++) {
+      this.particles.push(this.createParticle());
+    }
+  },
+  
+  createParticle() {
+    return {
+      x: Math.random() * 3000,
+      y: Math.random() * 3000,
+      size: 1 + Math.random() * 2,
+      speed: 0.2 + Math.random() * 0.5,
+      opacity: 0.1 + Math.random() * 0.3,
+      type: Math.random() > 0.5 ? 'sakura' : 'paper'
+    };
+  },
+  
+  update() {
+    this.particles.forEach(p => {
+      p.y += p.speed;
+      p.x += Math.sin(Date.now() / 1000 + p.y) * 0.5;
+      
+      if (p.y > 3000) {
+        p.y = 0;
+        p.x = Math.random() * 3000;
+      }
+    });
+  },
+  
+  render(ctx, camera) {
+    ctx.save();
+    this.particles.forEach(p => {
+      if (p.x < camera.x - 100 || p.x > camera.x + ctx.canvas.width + 100 ||
+          p.y < camera.y - 100 || p.y > camera.y + ctx.canvas.height + 100) {
+        return;
+      }
+      
+      ctx.globalAlpha = p.opacity;
+      if (p.type === 'sakura') {
+        // 樱花
+        ctx.fillStyle = '#ffb7b2';
+        ctx.beginPath();
+        ctx.arc(p.x - camera.x, p.y - camera.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // 飘落的试卷
+        ctx.fillStyle = '#dfe6e9';
+        ctx.fillRect(p.x - camera.x, p.y - camera.y, p.size * 2, p.size * 3);
+      }
+    });
+    ctx.restore();
+  }
+};
+
 // ==================== 存档系统 ====================
 const SaveSystem = {
   key: 'schoolRampage_save_v1',
@@ -672,6 +913,9 @@ let camera = { x: 0, y: 0 };
 function init() {
   canvas = document.getElementById('gameCanvas');
   ctx = canvas.getContext('2d');
+  
+  // 初始化背景效果
+  BackgroundEffects.init();
   
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
@@ -1797,17 +2041,15 @@ function killEnemy(enemy) {
     gameState.rageKills++;
   }
   
-  // 粒子特效
-  for (let i = 0; i < 5; i++) {
-    gameState.particles.push({
-      x: enemy.x,
-      y: enemy.y,
-      vx: (Math.random() - 0.5) * 10,
-      vy: (Math.random() - 0.5) * 10,
-      life: 0.5,
-      color: '#ffa502',
-      size: Math.random() * 5 + 3
-    });
+  // 增强版击杀特效
+  VisualEffects.createExplosion(enemy.x, enemy.y, '#ffa502', 12);
+  
+  // 飘字显示经验
+  FloatingText.add(enemy.x, enemy.y - 20, `+${enemyType.exp} XP`, '#2ed573', 14);
+  
+  // 暴击飘字
+  if (gameState.player.rageActive) {
+    FloatingText.add(enemy.x, enemy.y - 40, '暴击!', '#ff3838', 18);
   }
   
   gameState.kills++;
@@ -1938,6 +2180,10 @@ function gainExp(amount) {
     // 升级恢复
     player.hp = Math.min(player.maxHp, player.hp + 20);
     
+    // 升级特效
+    VisualEffects.createLevelUpEffect(player.x, player.y);
+    FloatingText.add(player.x, player.y - 50, 'LEVEL UP!', '#2ed573', 24);
+    
     showUpgradeModal();
   }
 }
@@ -2034,13 +2280,58 @@ function selectUpgrade(type, id) {
 // ==================== 粒子系统 ====================
 function updateParticles(deltaTime) {
   gameState.particles = gameState.particles.filter(p => {
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life -= deltaTime;
-    p.vx *= 0.95;
-    p.vy *= 0.95;
+    // 根据粒子类型更新
+    switch (p.type) {
+      case 'absorb':
+        // 向目标移动
+        const dx = p.targetX - p.x;
+        const dy = p.targetY - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 10) {
+          p.vx = (dx / dist) * 15;
+          p.vy = (dy / dist) * 15;
+        }
+        p.x += p.vx;
+        p.y += p.vy;
+        break;
+        
+      case 'ring':
+        // 扩散效果
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+        p.size *= 0.99;
+        break;
+        
+      case 'float':
+        // 上升效果
+        p.y += p.vy;
+        p.x += Math.sin(Date.now() / 200 + p.y) * 0.5;
+        break;
+        
+      case 'flash':
+        // 闪光效果
+        p.size *= 1.1;
+        break;
+        
+      default:
+        // 默认物理
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+    }
+    
+    p.life -= p.decay || deltaTime;
     return p.life > 0;
   });
+  
+  // 更新飘字
+  FloatingText.update();
+  
+  // 更新背景效果
+  BackgroundEffects.update();
 }
 
 // ==================== 连击系统 ====================
@@ -2074,6 +2365,9 @@ function render() {
   
   ctx.save();
   ctx.translate(-camera.x, -camera.y);
+  
+  // 绘制动态背景
+  BackgroundEffects.render(ctx, camera);
   
   // 绘制网格背景
   drawGrid();
@@ -2116,13 +2410,44 @@ function render() {
     ctx.fillText(itemConfig.emoji, item.x, item.y);
   });
   
-  // 绘制粒子
+  // 绘制粒子（增强版）
   gameState.particles.forEach(p => {
-    ctx.globalAlpha = p.life;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+    ctx.globalAlpha = Math.min(1, p.life);
+    
+    if (p.type === 'flash') {
+      // 闪光效果
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.type === 'crit') {
+      // 暴击星形
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+        const x = p.x + Math.cos(angle) * p.size;
+        const y = p.y + Math.sin(angle) * p.size;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // 普通粒子带发光
+      ctx.shadowBlur = p.size;
+      ctx.shadowColor = p.color;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
   });
   ctx.globalAlpha = 1;
+  
+  // 绘制飘字
+  FloatingText.render(ctx, camera);
   
   // 绘制敌人
   gameState.enemies.forEach(enemy => {
