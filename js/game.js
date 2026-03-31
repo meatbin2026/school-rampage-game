@@ -3140,6 +3140,12 @@ function startGame() {
   document.getElementById('skillBar').style.display = 'flex';
   document.getElementById('hint').style.display = 'block';
   
+  // 显示移动端控制
+  if (gameState.isMobile || gameState.isWechat) {
+    const mobileControls = document.getElementById('mobileControls');
+    if (mobileControls) mobileControls.style.display = 'block';
+  }
+  
   updateSkillBar();
 }
 
