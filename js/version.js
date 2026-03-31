@@ -1,10 +1,20 @@
 // ==================== 版本管理系统 ====================
 const VersionManager = {
   // 当前版本号
-  currentVersion: '1.0',
+  currentVersion: '1.1',
   
   // 版本历史记录
   changelog: [
+    {
+      version: '1.1',
+      date: '2025-03-31',
+      title: 'Bug修复',
+      changes: [
+        '🐛 修复游戏无法开始的语法错误',
+        '🔧 删除重复的代码块',
+        '🔧 修复重复变量声明问题'
+      ]
+    },
     {
       version: '1.0',
       date: '2025-03-31',

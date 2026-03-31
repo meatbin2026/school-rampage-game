@@ -4724,24 +4724,6 @@ function spawnItemAt(x, y, itemId) {
     createdAt: Date.now()
   });
 }
-    gameState.particles.push({
-      x: boss.x,
-      y: boss.y,
-      vx: (Math.random() - 0.5) * 20,
-      vy: (Math.random() - 0.5) * 20,
-      life: 1.5,
-      color: '#ff3838',
-      size: Math.random() * 10 + 5
-    });
-  }
-  
-  gameState.bossKilled++;
-  gameState.boss = null;
-  gameState.nextBossSpawn = Date.now() - gameState.startTime + CONFIG.bossSpawnInterval;
-  
-  // 显示击败提示
-  showBossDefeated();
-}
 
 function showBossDefeated() {
   const msg = document.createElement('div');
@@ -4947,7 +4929,6 @@ function killEnemy(enemy, weaponId) {
   }
   
   // 创建死亡动画
-  const enemyType = ENEMY_TYPES[enemy.type];
   DeathAnimation.create(
     enemy.x, 
     enemy.y, 
