@@ -33,9 +33,14 @@ const ScreenShake = {
 // ==================== 死亡动画系统 ====================
 const DeathAnimation = {
   animations: [],
+  maxAnimations: 15, // 限制最大死亡动画数量
   
   // 创建死亡动画
   create(x, y, emoji, color, size, isElite = false) {
+    // 如果超过最大数量，移除最旧的
+    if (this.animations.length >= this.maxAnimations) {
+      this.animations.shift();
+    }
     const animation = {
       x, y,
       emoji,
@@ -339,8 +344,13 @@ const VisualEffects = {
 // 飘字系统
 const FloatingText = {
   texts: [],
+  maxTexts: 30, // 限制最大飘字数量
   
   add(x, y, text, color, size = 16, duration = 1000) {
+    // 如果超过最大数量，移除最旧的
+    if (this.texts.length >= this.maxTexts) {
+      this.texts.shift();
+    }
     this.texts.push({
       x, y, text, color, size,
       createdAt: Date.now(),
@@ -5589,7 +5599,10 @@ function killEnemy(enemy, weaponId) {
         vy: (Math.random() - 0.5) * 2,
         isBonus: true
       });
-      FloatingText.add(enemy.x, enemy.y - 40, `+${bonusExp} 连击奖励!`, '#ffa502', 12);
+      // 性能优化：只有高连击时才显示连击奖励飘字
+      if (gameState.combo.count >= 20) {
+        FloatingText.add(enemy.x, enemy.y - 40, `+${bonusExp} 连击奖励!`, '#ffa502', 12);
+      }
     }
   }
   
@@ -5627,8 +5640,8 @@ function killEnemy(enemy, weaponId) {
     gameState.bomberKills++;
   }
   
-  // 暴击飘字
-  if (gameState.player.rageActive) {
+  // 暴击飘字（性能优化：只在非精英怪时显示，避免与精英击杀飘字重叠）
+  if (gameState.player.rageActive && !enemy.isElite) {
     FloatingText.add(enemy.x, enemy.y - 40, '暴击!', '#ff3838', 18);
   }
   
@@ -6083,13 +6096,15 @@ function updateComboSystem() {
   }
 }
 
+// 预计算连击阈值数组，避免每次调用都重新计算
+const COMBO_THRESHOLDS = [100, 50, 20, 10, 5];
+
 function getComboExpBonus() {
   const count = gameState.combo.count;
   const bonuses = CONFIG.comboSystem.bonusExp;
   
-  // 从最高档向下匹配
-  const thresholds = Object.keys(bonuses).map(Number).sort((a, b) => b - a);
-  for (const threshold of thresholds) {
+  // 使用预计算的阈值数组
+  for (const threshold of COMBO_THRESHOLDS) {
     if (count >= threshold) {
       return bonuses[threshold];
     }
