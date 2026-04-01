@@ -3226,6 +3226,36 @@ function startGame() {
   // 重置复活币
   gameState.hasRevive = false;
   
+  // v1.6 重置连击系统
+  gameState.combo = {
+    count: 0,
+    lastKillTime: 0,
+    maxCombo: 0,
+    bonusMultiplier: 1
+  };
+  
+  // v1.6 重置双武器系统
+  gameState.dualWeapon = {
+    primary: null,
+    secondary: null,
+    current: 'primary',
+    lastSwitchTime: 0
+  };
+  
+  // v1.7 重置特殊波次
+  gameState.specialWave = {
+    active: false,
+    type: null,
+    startTime: 0,
+    notified: false
+  };
+  
+  // v1.7 重置可破坏物体
+  gameState.destructibles = [];
+  
+  // v1.7 重置里程碑
+  gameState.milestonesReached = [];
+  
   // 重置统计
   gameState.kills = 0;
   gameState.totalDamage = 0;
@@ -3584,6 +3614,12 @@ function update(deltaTime) {
   // 更新经验球
   updateExpOrbs(deltaTime);
   
+  // v1.7 更新特殊波次
+  updateSpecialWave();
+  
+  // v1.7 更新可破坏物体
+  updateDestructibles(deltaTime);
+  
   // 更新粒子
   updateParticles(deltaTime);
   
@@ -3663,9 +3699,22 @@ function updatePlayerMovement(deltaTime) {
 function updatePlayerAttack(deltaTime) {
   const player = gameState.player;
   
-  // 遍历所有已解锁的武器
+  // v1.7 性能优化：只攻击当前装备的武器
+  const currentWeaponId = getCurrentWeaponId();
+  
+  // 遍历所有已解锁且已装备的武器（等级>0）
   Object.entries(gameState.weapons).forEach(([weaponId, weaponData]) => {
-    if (!weaponData.unlocked) return;
+    if (!weaponData.unlocked || weaponData.level <= 0) return;
+    
+    // v1.7 性能优化：双武器系统下只攻击主副武器
+    if (CONFIG.dualWeapon.enabled && gameState.dualWeapon.primary) {
+      const isPrimary = weaponId === gameState.dualWeapon.primary;
+      const isSecondary = weaponId === gameState.dualWeapon.secondary;
+      const isCurrent = weaponId === currentWeaponId;
+      
+      // 只攻击当前激活的武器
+      if (!isCurrent) return;
+    }
     
     const weapon = WEAPONS[weaponId];
     const fireRate = 1 / (player.attackSpeed * weapon.speed * (player.rageActive ? 2 : 1));
@@ -5340,14 +5389,33 @@ function updateEnemies(deltaTime) {
   const player = gameState.player;
   const now = Date.now();
   
+  // v1.7 性能优化：限制敌人数量
+  const maxEnemies = CONFIG.maxEnemies || 100;
+  if (gameState.enemies.length > maxEnemies) {
+    // 按距离玩家远近排序，优先移除远处的敌人
+    gameState.enemies.sort((a, b) => {
+      const distA = Math.hypot(player.x - a.x, player.y - a.y);
+      const distB = Math.hypot(player.x - b.x, player.y - b.y);
+      return distB - distA; // 远的在前
+    });
+    // 移除超出限制的远处敌人
+    const removed = gameState.enemies.splice(maxEnemies);
+    removed.forEach(enemy => {
+      // 给玩家一些经验补偿
+      gameState.player.exp += Math.floor(enemy.exp * 0.5);
+    });
+  }
+  
   gameState.enemies = gameState.enemies.filter(enemy => {
     // 检查眩晕状态
     if (enemy.stunned) {
       if (now > enemy.stunEndTime) {
         enemy.stunned = false;
       } else {
-        // 眩晕时不移动，显示眩晕效果
-        FloatingText.add(enemy.x, enemy.y - enemy.size - 15, '💫', '#ffa502', 20);
+        // 眩晕时不移动，显示眩晕效果（降低频率）
+        if (now % 500 < 50) { // 每500ms显示一次
+          FloatingText.add(enemy.x, enemy.y - enemy.size - 15, '💫', '#ffa502', 16);
+        }
         // 眩晕时跳过移动逻辑
         return enemy.hp > 0;
       }
@@ -5571,6 +5639,20 @@ function killEnemy(enemy, weaponId) {
 function updateBullets(deltaTime) {
   const player = gameState.player;
   
+  // v1.7 性能优化：限制子弹数量
+  const maxBullets = 200;
+  if (gameState.bullets.length > maxBullets) {
+    // 优先保留环绕子弹（戒尺）和敌人子弹
+    gameState.bullets.sort((a, b) => {
+      if (a.orbit && !b.orbit) return -1;
+      if (!a.orbit && b.orbit) return 1;
+      if (a.isEnemyBullet && !b.isEnemyBullet) return -1;
+      if (!a.isEnemyBullet && b.isEnemyBullet) return 1;
+      return 0;
+    });
+    gameState.bullets = gameState.bullets.slice(0, maxBullets);
+  }
+  
   gameState.bullets = gameState.bullets.filter(bullet => {
     if (bullet.orbit) {
       // 环绕子弹
@@ -5586,12 +5668,39 @@ function updateBullets(deltaTime) {
     // 跳过敌人子弹
     if (bullet.isEnemyBullet) return true;
     
-    // 碰撞检测 - 普通敌人
+    // v1.7 性能优化：只检测距离子弹较近的敌人
     let hit = false;
+    const checkRadius = 100; // 只检测子弹周围100像素的敌人
+    
+    // v1.7 子弹与可破坏物体碰撞检测
+    gameState.destructibles.forEach(d => {
+      if (d.destroyed) return;
+      const dx = bullet.x - d.x;
+      const dy = bullet.y - d.y;
+      if (Math.abs(dx) > checkRadius || Math.abs(dy) > checkRadius) return;
+      
+      const dist = Math.hypot(dx, dy);
+      if (dist < d.size + 10) {
+        damageDestructible(d, bullet.damage);
+        if (bullet.pierce <= 0) {
+          hit = true;
+        } else {
+          bullet.pierce--;
+        }
+      }
+    });
+    
+    if (hit) return false;
+    
     gameState.enemies.forEach(enemy => {
       if (bullet.hitEnemies.has(enemy)) return;
       
-      const dist = Math.hypot(bullet.x - enemy.x, bullet.y - enemy.y);
+      // 快速距离检查，避免不必要的Math.hypot
+      const dx = bullet.x - enemy.x;
+      const dy = bullet.y - enemy.y;
+      if (Math.abs(dx) > checkRadius || Math.abs(dy) > checkRadius) return;
+      
+      const dist = Math.hypot(dx, dy);
       if (dist < enemy.size + 10) {
         enemy.hp -= bullet.damage;
         bullet.hitEnemies.add(enemy);
@@ -5693,6 +5802,18 @@ function updateExpOrbs(deltaTime) {
   const pickupRange = 100 + (gameState.unlocks.pickup ? 30 : 0);
   const attractRange = magnetActive ? 300 : pickupRange;
   const attractSpeed = magnetActive ? 1.5 : 0.5;
+  
+  // v1.7 性能优化：限制经验球数量，优先保留离玩家近的
+  const maxOrbs = 100;
+  if (gameState.expOrbs.length > maxOrbs) {
+    // 按距离排序，保留最近的
+    gameState.expOrbs.sort((a, b) => {
+      const distA = Math.hypot(player.x - a.x, player.y - a.y);
+      const distB = Math.hypot(player.x - b.x, player.y - b.y);
+      return distA - distB;
+    });
+    gameState.expOrbs = gameState.expOrbs.slice(0, maxOrbs);
+  }
   
   gameState.expOrbs = gameState.expOrbs.filter(orb => {
     // 向玩家吸附
@@ -5853,6 +5974,13 @@ function selectUpgrade(type, id) {
 
 // ==================== 粒子系统 ====================
 function updateParticles(deltaTime) {
+  // v1.7 性能优化：限制粒子数量
+  const maxParticles = 150;
+  if (gameState.particles.length > maxParticles) {
+    // 保留最新的粒子
+    gameState.particles = gameState.particles.slice(-maxParticles);
+  }
+  
   gameState.particles = gameState.particles.filter(p => {
     // 根据粒子类型更新
     switch (p.type) {
@@ -6122,6 +6250,35 @@ function render() {
   
   // 绘制飘字
   FloatingText.render(ctx, camera);
+  
+  // v1.7 绘制可破坏物体
+  gameState.destructibles.forEach(d => {
+    if (d.destroyed) return;
+    
+    // 血条
+    const hpPercent = d.hp / d.maxHp;
+    ctx.fillStyle = '#2d3436';
+    ctx.fillRect(d.x - 20, d.y - d.size - 8, 40, 3);
+    ctx.fillStyle = hpPercent > 0.5 ? '#74b9ff' : '#ff4757';
+    ctx.fillRect(d.x - 20, d.y - d.size - 8, 40 * hpPercent, 3);
+    
+    // 物体图标
+    ctx.save();
+    ctx.font = `${d.size}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.emoji, d.x, d.y);
+    ctx.restore();
+    
+    // 光晕效果
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.size * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = d.color;
+    ctx.fill();
+    ctx.restore();
+  });
   
   // 绘制敌人
   gameState.enemies.forEach(enemy => {
