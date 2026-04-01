@@ -383,7 +383,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
+      gap: 16px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      padding: 32px 20px 40px;
       z-index: 400;
     }
 
@@ -465,33 +471,6 @@
       box-shadow: 0 15px 50px rgba(255, 71, 87, 0.6);
     }
 
-    /* 连击显示 */
-    .combo-display {
-      position: fixed;
-      top: 30%;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 48px;
-      font-weight: 900;
-      color: var(--accent);
-      text-shadow: 0 0 30px var(--accent);
-      opacity: 0;
-      pointer-events: none;
-      z-index: 150;
-      transition: opacity 0.3s;
-    }
-
-    .combo-display.active {
-      opacity: 1;
-      animation: comboPop 0.5s ease;
-    }
-
-    @keyframes comboPop {
-      0% { transform: translateX(-50%) scale(0.5); }
-      50% { transform: translateX(-50%) scale(1.2); }
-      100% { transform: translateX(-50%) scale(1); }
-    }
-    
     /* 道具效果指示器动画 */
     @keyframes effectPulse {
       0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
@@ -568,9 +547,10 @@
     
     /* 成就列表 */
     .achievements-section {
-      margin-top: 30px;
+      margin-top: 8px;
       width: 100%;
       max-width: 500px;
+      flex-shrink: 0;
     }
     
     .achievements-title {
@@ -586,6 +566,9 @@
       gap: 10px;
       max-height: 200px;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       padding: 10px;
       background: rgba(0,0,0,0.3);
       border-radius: 12px;
@@ -1191,6 +1174,10 @@
     
     /* 移动端适配 */
     @media (max-width: 768px) {
+      .start-screen {
+        padding: 24px 16px 32px;
+      }
+
       .game-title {
         font-size: 48px;
       }
@@ -1200,10 +1187,13 @@
       }
       
       .character-select {
+        width: 100%;
+        flex-direction: column;
         gap: 15px;
       }
       
       .character-card {
+        width: 100%;
         padding: 20px;
       }
       
@@ -1244,6 +1234,22 @@
       
       .hint {
         display: none !important;
+      }
+
+      .save-stats {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      .achievements-section {
+        max-width: 100%;
+      }
+
+      .achievements-list {
+        grid-template-columns: 1fr;
+        max-height: 260px;
       }
     }
     
@@ -1341,7 +1347,7 @@
     
     <!-- 版本信息 -->
     <div class="version-info" style="margin: 15px 0; font-size: 14px; color: var(--text-dim); cursor: pointer;" onclick="VersionManager.showChangelog()">
-      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.5</strong></span>
+      <span>当前版本: <strong class="version-display" style="color: var(--accent);">v1.7.3</strong></span>
       <span style="margin-left: 10px; font-size: 12px; opacity: 0.6;">点击查看更新日志</span>
     </div>
     
@@ -1395,9 +1401,6 @@
   <!-- 暴走指示器 -->
   <div class="rage-indicator" id="rageIndicator">暴走模式!</div>
 
-  <!-- 连击显示 -->
-  <div class="combo-display" id="comboDisplay">x10 连击!</div>
-  
   <!-- 激活效果指示器 -->
   <div class="active-effects" id="activeEffects"></div>
 
@@ -1478,7 +1481,7 @@
   <script src="js/game.js"></script>
   
   <!-- 版本显示 -->
-  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.5</div>
+  <div class="version-display" id="versionDisplay" onclick="VersionManager.showChangelog()">v1.7.3</div>
   
   <!-- 横屏提示 -->
   <div class="orientation-hint" id="orientationHint">

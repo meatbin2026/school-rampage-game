@@ -413,9 +413,10 @@ const BackgroundEffects = {
   },
   
   update() {
+    const time = Date.now() / 1000;
     this.particles.forEach(p => {
       p.y += p.speed;
-      p.x += Math.sin(Date.now() / 1000 + p.y) * 0.5;
+      p.x += Math.sin(time + p.y) * 0.5;
       
       if (p.y > 3000) {
         p.y = 0;
@@ -456,17 +457,63 @@ const WeaponMastery = {
   expPerKill: 20,
   expToNextLevel: [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000], // 每级所需经验
   maxLevel: 10,
+  cache: null,
+  saveTimer: null,
+  saveToken: 0,
+
+  ensureCache() {
+    if (this.cache) return this.cache;
+
+    const saveData = SaveSystem.load();
+    this.cache = saveData.weaponMastery ? JSON.parse(JSON.stringify(saveData.weaponMastery)) : {};
+    return this.cache;
+  },
+
+  getMasteryRecord(weaponId) {
+    const cache = this.ensureCache();
+    if (!cache[weaponId]) {
+      cache[weaponId] = { level: 0, exp: 0, totalKills: 0 };
+    }
+    return cache[weaponId];
+  },
+
+  scheduleSave() {
+    this.saveToken++;
+    const currentToken = this.saveToken;
+
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+    }
+
+    this.saveTimer = setTimeout(() => {
+      if (currentToken !== this.saveToken) {
+        return;
+      }
+      this.flush();
+    }, 300);
+  },
+
+  flush() {
+    if (!this.cache) return;
+
+    const saveData = SaveSystem.load();
+    saveData.weaponMastery = JSON.parse(JSON.stringify(this.cache));
+    SaveSystem.save(saveData);
+
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+  },
   
   // 获取武器当前等级
   getLevel(weaponId) {
-    const saveData = SaveSystem.load();
-    return saveData.weaponMastery?.[weaponId]?.level || 0;
+    return this.getMasteryRecord(weaponId).level || 0;
   },
   
   // 获取武器当前经验
   getExp(weaponId) {
-    const saveData = SaveSystem.load();
-    return saveData.weaponMastery?.[weaponId]?.exp || 0;
+    return this.getMasteryRecord(weaponId).exp || 0;
   },
   
   // 获取升级所需经验
@@ -478,13 +525,7 @@ const WeaponMastery = {
   
   // 添加武器经验
   addExp(weaponId, amount) {
-    const saveData = SaveSystem.load();
-    if (!saveData.weaponMastery) saveData.weaponMastery = {};
-    if (!saveData.weaponMastery[weaponId]) {
-      saveData.weaponMastery[weaponId] = { level: 0, exp: 0, totalKills: 0 };
-    }
-    
-    const mastery = saveData.weaponMastery[weaponId];
+    const mastery = this.getMasteryRecord(weaponId);
     if (mastery.level >= this.maxLevel) return false;
     
     mastery.exp += amount;
@@ -498,19 +539,15 @@ const WeaponMastery = {
       this.onLevelUp(weaponId, mastery.level);
     }
     
-    SaveSystem.save(saveData);
+    this.scheduleSave();
     return leveledUp;
   },
   
   // 记录武器击杀
   addKill(weaponId) {
-    const saveData = SaveSystem.load();
-    if (!saveData.weaponMastery) saveData.weaponMastery = {};
-    if (!saveData.weaponMastery[weaponId]) {
-      saveData.weaponMastery[weaponId] = { level: 0, exp: 0, totalKills: 0 };
-    }
-    saveData.weaponMastery[weaponId].totalKills++;
-    SaveSystem.save(saveData);
+    const mastery = this.getMasteryRecord(weaponId);
+    mastery.totalKills++;
+    this.scheduleSave();
   },
   
   // 升级时触发
@@ -633,8 +670,7 @@ const WeaponMastery = {
   
   // 获取武器排行榜
   getLeaderboard() {
-    const saveData = SaveSystem.load();
-    const mastery = saveData.weaponMastery || {};
+    const mastery = this.ensureCache();
     
     return Object.entries(mastery)
       .map(([id, data]) => ({
@@ -1110,25 +1146,37 @@ const SaveSystem = {
     return data;
   },
   
+  // 本次游戏已解锁的成就（防止重复显示）
+  sessionUnlocked: new Set(),
+  
   checkAchievements(data, gameStats) {
     const achievements = ACHIEVEMENTS;
     
     for (const [id, achievement] of Object.entries(achievements)) {
-      if (!data.achievements[id]) {
+      // 检查是否已经在存档中解锁或本次游戏中已显示
+      if (!data.achievements[id] && !this.sessionUnlocked.has(id)) {
         const progress = achievement.check(gameStats, data);
         if (progress >= achievement.target) {
           data.achievements[id] = {
             unlocked: true,
             unlockedAt: Date.now()
           };
+          // 标记为本次游戏已解锁
+          this.sessionUnlocked.add(id);
           showAchievementUnlock(achievement);
         }
       }
     }
   },
   
+  // 重置会话缓存（游戏开始时调用）
+  resetSession() {
+    this.sessionUnlocked.clear();
+  },
+  
   reset() {
     localStorage.removeItem(this.key);
+    this.sessionUnlocked.clear();
   }
 };
 
@@ -1693,9 +1741,55 @@ const AudioSystem = {
   enabled: true,
   volume: 0.5,
   ctx: null,
+
+  play(soundName) {
+    const handlers = {
+      weapon_switch: () => this.playTone(900, 0.08, 'triangle'),
+      special_wave: () => {
+        [440, 660, 880].forEach((freq, i) => {
+          setTimeout(() => this.playTone(freq, 0.12, 'sawtooth'), i * 70);
+        });
+      },
+      milestone: () => {
+        [523.25, 659.25, 783.99].forEach((freq, i) => {
+          setTimeout(() => this.playTone(freq, 0.18, 'sine'), i * 120);
+        });
+      },
+      destructible_break: () => this.playNoise(0.12)
+    };
+
+    handlers[soundName]?.();
+  },
+  
+  // 从本地存储加载设置
+  loadSettings() {
+    try {
+      const saved = localStorage.getItem('schoolRampage_audioSettings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        this.enabled = settings.enabled !== undefined ? settings.enabled : true;
+        this.volume = settings.volume || 0.5;
+      }
+    } catch (e) {
+      console.warn('加载音效设置失败:', e);
+    }
+  },
+  
+  // 保存设置到本地存储
+  saveSettings() {
+    try {
+      localStorage.setItem('schoolRampage_audioSettings', JSON.stringify({
+        enabled: this.enabled,
+        volume: this.volume
+      }));
+    } catch (e) {
+      console.warn('保存音效设置失败:', e);
+    }
+  },
   
   // 初始化音频上下文
   init() {
+    this.loadSettings();
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) {
@@ -1884,7 +1978,17 @@ const AudioSystem = {
   // 切换音效开关
   toggle() {
     this.enabled = !this.enabled;
+    this.saveSettings();
     return this.enabled;
+  },
+
+  toggleMute() {
+    const enabled = this.toggle();
+    const button = document.getElementById('muteBtn');
+    if (button) {
+      button.textContent = enabled ? '🔊 音效: 开' : '🔇 音效: 关';
+    }
+    return enabled;
   }
 };
 
@@ -2012,18 +2116,7 @@ const CONFIG = {
     damageReduction: 0.5 // 50%减伤
   },
   
-  // v1.6 新增：连击系统配置
-  comboSystem: {
-    enabled: true,
-    timeout: 3000, // 连击超时时间（毫秒）
-    bonusExp: { // 连击经验加成
-      5: 0.1,   // 5连击 +10%经验
-      10: 0.2,  // 10连击 +20%经验
-      20: 0.35, // 20连击 +35%经验
-      50: 0.5,  // 50连击 +50%经验
-      100: 1.0  // 100连击 +100%经验
-    }
-  },
+
   
   // v1.6 新增：双武器系统
   dualWeapon: {
@@ -2164,6 +2257,16 @@ const ENEMY_TYPES = {
     size: 24,
     color: '#a29bfe',
     canTeleport: true
+  },
+  foodMinion: {
+    name: '食物小兵',
+    emoji: '🍔',
+    hp: 100,
+    damage: 15,
+    speed: 1.2,
+    exp: 50,
+    size: 35,
+    color: '#e67e22'
   }
 };
 
@@ -2532,6 +2635,7 @@ const BOSSES = {
             const angle = (i / 3) * Math.PI * 2;
             const dist = 100;
             const foodEnemy = {
+              type: 'foodMinion',
               x: boss.x + Math.cos(angle) * dist,
               y: boss.y + Math.sin(angle) * dist,
               hp: 100 + boss.phase * 50,
@@ -2958,7 +3062,10 @@ let gameState = {
     magnet: { active: false, endTime: 0 },
     shield: { active: false, endTime: 0 },
     speed: { active: false, endTime: 0, multiplier: 1 },
-    exp: { active: false, endTime: 0, multiplier: 1 }
+    exp: { active: false, endTime: 0, multiplier: 1 },
+    slow: { active: false, endTime: 0, multiplier: 1 },
+    silence: { active: false, endTime: 0 },
+    burn: { active: false, endTime: 0, damage: 0, lastTick: 0 }
   },
   
   // 解锁的能力
@@ -2988,6 +3095,7 @@ let gameState = {
   bullets: [],
   particles: [],
   expOrbs: [],
+  playerZones: [],
   
   // 波次系统
   wave: 1,
@@ -3065,6 +3173,7 @@ function init() {
   
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('pagehide', () => WeaponMastery.flush());
   
   // 输入事件
   window.addEventListener('keydown', e => {
@@ -3144,10 +3253,18 @@ function setupUI() {
   if (window.VersionManager) {
     VersionManager.init();
   }
+
+  const muteBtn = document.getElementById('muteBtn');
+  if (muteBtn) {
+    muteBtn.textContent = AudioSystem.enabled ? '🔊 音效: 开' : '🔇 音效: 关';
+  }
 }
 
 // ==================== 游戏流程 ====================
 function startGame() {
+  // 重置成就会话缓存
+  SaveSystem.resetSession();
+  
   const charConfig = CHARACTERS[gameState.player.character];
   
   // 初始化玩家状态
@@ -3209,7 +3326,10 @@ function startGame() {
     magnet: { active: false, endTime: 0 },
     shield: { active: false, endTime: 0 },
     speed: { active: false, endTime: 0, multiplier: 1 },
-    exp: { active: false, endTime: 0, multiplier: 1 }
+    exp: { active: false, endTime: 0, multiplier: 1 },
+    slow: { active: false, endTime: 0, multiplier: 1 },
+    silence: { active: false, endTime: 0 },
+    burn: { active: false, endTime: 0, damage: 0, lastTick: 0 }
   };
   
   // 重置游戏对象
@@ -3217,6 +3337,7 @@ function startGame() {
   gameState.bullets = [];
   gameState.particles = [];
   gameState.expOrbs = [];
+  gameState.playerZones = [];
   
   // 重置波次系统
   gameState.wave = 1;
@@ -3236,13 +3357,7 @@ function startGame() {
   // 重置复活币
   gameState.hasRevive = false;
   
-  // v1.6 重置连击系统
-  gameState.combo = {
-    count: 0,
-    lastKillTime: 0,
-    maxCombo: 0,
-    bonusMultiplier: 1
-  };
+
   
   // v1.6 重置双武器系统
   gameState.dualWeapon = {
@@ -3426,6 +3541,8 @@ function togglePause() {
 }
 
 function gameOver() {
+  WeaponMastery.flush();
+
   // 检查是否有复活币
   if (gameState.hasRevive) {
     gameState.hasRevive = false;
@@ -3623,6 +3740,9 @@ function update(deltaTime) {
   
   // 更新经验球
   updateExpOrbs(deltaTime);
+
+  // 更新玩家武器区域效果
+  updatePlayerZones(deltaTime);
   
   // v1.7 更新特殊波次
   updateSpecialWave();
@@ -3632,9 +3752,6 @@ function update(deltaTime) {
   
   // 更新粒子
   updateParticles(deltaTime);
-  
-  // 更新连击
-  updateCombo(deltaTime);
   
   // 生命恢复
   updateHealthRegen(deltaTime);
@@ -3697,8 +3814,11 @@ function updatePlayerMovement(deltaTime) {
     speedMultiplier *= gameState.activeEffects.speed.multiplier;
   }
   const speed = player.speed * speedMultiplier;
-  player.x += dx * speed;
-  player.y += dy * speed;
+  const slowMultiplier = gameState.activeEffects.slow.active
+    ? gameState.activeEffects.slow.multiplier
+    : 1;
+  player.x += dx * speed * slowMultiplier;
+  player.y += dy * speed * slowMultiplier;
   
   // 边界限制
   const margin = 50;
@@ -3708,32 +3828,31 @@ function updatePlayerMovement(deltaTime) {
 
 function updatePlayerAttack(deltaTime) {
   const player = gameState.player;
+
+  if (gameState.activeEffects.silence.active) {
+    return;
+  }
   
   // v1.7 性能优化：只攻击当前装备的武器
   const currentWeaponId = getCurrentWeaponId();
   
-  // 遍历所有已解锁且已装备的武器（等级>0）
-  Object.entries(gameState.weapons).forEach(([weaponId, weaponData]) => {
-    if (!weaponData.unlocked || weaponData.level <= 0) return;
-    
-    // v1.7 性能优化：双武器系统下只攻击主副武器
-    if (CONFIG.dualWeapon.enabled && gameState.dualWeapon.primary) {
-      const isPrimary = weaponId === gameState.dualWeapon.primary;
-      const isSecondary = weaponId === gameState.dualWeapon.secondary;
-      const isCurrent = weaponId === currentWeaponId;
-      
-      // 只攻击当前激活的武器
-      if (!isCurrent) return;
-    }
-    
-    const weapon = WEAPONS[weaponId];
-    const fireRate = 1 / (player.attackSpeed * weapon.speed * (player.rageActive ? 2 : 1));
-    
-    if (!weaponData.lastFire || Date.now() - weaponData.lastFire > fireRate * 1000) {
-      fireWeapon(weaponId, weapon, weaponData);
-      weaponData.lastFire = Date.now();
-    }
-  });
+  // 如果没有当前武器，不执行攻击
+  if (!currentWeaponId || !gameState.weapons[currentWeaponId]?.unlocked) {
+    return;
+  }
+  
+  const weaponData = gameState.weapons[currentWeaponId];
+  const weapon = WEAPONS[currentWeaponId];
+  
+  // 检查武器是否有效
+  if (!weapon || !weaponData || weaponData.level <= 0) return;
+  
+  const fireRate = 1 / (player.attackSpeed * weapon.speed * (player.rageActive ? 2 : 1));
+  
+  if (!weaponData.lastFire || Date.now() - weaponData.lastFire > fireRate * 1000) {
+    fireWeapon(currentWeaponId, weapon, weaponData);
+    weaponData.lastFire = Date.now();
+  }
 }
 
 function fireWeapon(weaponId, weapon, weaponData) {
@@ -3775,18 +3894,101 @@ function fireWeapon(weaponId, weapon, weaponData) {
       break;
       
     case 'ruler':
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 4 + Math.min(2, Math.floor(count / 3)); i++) {
         const rotation = (Date.now() / 1000) + (i * Math.PI / 2);
         createBullet(player.x, player.y, rotation, weapon, true, weaponId);
       }
       break;
       
     case 'basketball':
-      createBullet(player.x, player.y, angle, weapon, false, weaponId);
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 4), 2); i++) {
+        const spread = (i - (Math.min(1 + Math.floor(count / 4), 2) - 1) / 2) * 0.08;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.size = 13 + Math.min(4, count);
+          bullet.life = 0.9;
+          bullet.knockbackBoost = 35 + count * 4;
+          bullet.explosionRadius = 100 + count * 4;
+          bullet.explosionDamageScale = 0.95;
+          bullet.trailColor = '#f39c12';
+        }
+      }
       break;
       
     case 'eraser':
-      createBullet(player.x, player.y, angle, weapon, false, weaponId);
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 3), 3); i++) {
+        const spread = (i - Math.floor(Math.min(1 + Math.floor(count / 3), 3) / 2)) * 0.18;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.pierce = Math.max(bullet.pierce, 1 + Math.floor(count / 2));
+        }
+      }
+      break;
+
+    case 'broom':
+      for (let i = 0; i < Math.min(3 + Math.floor(count / 2), 6); i++) {
+        const total = Math.min(3 + Math.floor(count / 2), 6);
+        const spread = (i - (total - 1) / 2) * 0.34;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.life = 0.3;
+          bullet.size = 11;
+          bullet.knockbackBoost = 48 + count * 3;
+          bullet.pierce = Math.max(bullet.pierce, 1);
+          bullet.stunChance = count >= 5 ? 0.18 : 0.08;
+          bullet.trailColor = '#27ae60';
+        }
+      }
+      break;
+
+    case 'ink':
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 3), 3); i++) {
+        const spread = (i - (Math.min(1 + Math.floor(count / 3), 3) - 1) / 2) * 0.12;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.dotEffect = true;
+          bullet.dotDamage = Math.max(4, Math.floor(bullet.damage * 0.2));
+        }
+      }
+      break;
+
+    case 'triangle':
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 3), 3); i++) {
+        const spread = (i - (Math.min(1 + Math.floor(count / 3), 3) - 1) / 2) * 0.16;
+        createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+      }
+      break;
+
+    case 'examPaper':
+      {
+        const masteryBonuses = WeaponMastery.getBonuses(weaponId);
+        const totalPapers = Math.min(
+          6 + count + (masteryBonuses.special ? 2 : 0) + (masteryBonuses.ultimate ? 4 : 0),
+          masteryBonuses.ultimate ? 20 : 14
+        );
+        const stormSpread = masteryBonuses.ultimate ? 2.8 : (masteryBonuses.special ? 2.2 : 1.8);
+        const spawnRadius = masteryBonuses.ultimate ? 110 : 70;
+
+        for (let i = 0; i < totalPapers; i++) {
+          const spawnAngle = (Math.PI * 2 * i) / totalPapers + Math.random() * 0.35;
+          const spawnX = player.x + Math.cos(spawnAngle) * (Math.random() * spawnRadius);
+          const spawnY = player.y + Math.sin(spawnAngle) * (Math.random() * spawnRadius);
+          const stormAngle = angle + (Math.random() - 0.5) * stormSpread;
+          const bullet = createBullet(spawnX, spawnY, stormAngle, weapon, false, weaponId);
+          if (!bullet) continue;
+
+          bullet.life = masteryBonuses.ultimate ? 1.7 : 1.2;
+          bullet.size = masteryBonuses.ultimate ? 10 : 8;
+          bullet.pierce = Math.max(bullet.pierce, masteryBonuses.ultimate ? 2 : 1);
+          bullet.vx *= masteryBonuses.ultimate ? 0.7 : 0.8;
+          bullet.vy *= masteryBonuses.ultimate ? 0.7 : 0.8;
+          bullet.vx += (Math.random() - 0.5) * 2.4;
+          bullet.vy += (Math.random() - 0.5) * 2.4;
+          bullet.blindEffect = masteryBonuses.special;
+          bullet.paperStorm = true;
+          bullet.trailColor = '#ecf0f1';
+        }
+      }
       break;
       
     case 'lunchBox':
@@ -3820,6 +4022,30 @@ function fireWeapon(weaponId, weapon, weaponData) {
         const spread = (Math.random() - 0.5) * 0.5;
         createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
       }
+      break;
+
+    case 'laser':
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 2), 3); i++) {
+        const spread = (i - (Math.min(1 + Math.floor(count / 2), 3) - 1) / 2) * 0.05;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.life = 0.55;
+        }
+      }
+      break;
+
+    case 'iceStick':
+      for (let i = 0; i < Math.min(1 + Math.floor(count / 2), 3); i++) {
+        const spread = (i - (Math.min(1 + Math.floor(count / 2), 3) - 1) / 2) * 0.14;
+        const bullet = createBullet(player.x, player.y, angle + spread, weapon, false, weaponId);
+        if (bullet) {
+          bullet.freezeEffect = true;
+        }
+      }
+      break;
+
+    default:
+      createBullet(player.x, player.y, angle, weapon, false, weaponId);
       break;
   }
 }
@@ -3963,6 +4189,20 @@ function createSingleBullet(x, y, angle, weapon, orbit = false, weaponId = null)
     finalDamage *= 2;
   }
   
+  const bulletStyles = {
+    basketball: { color: '#e17055', size: 12 },
+    broom: { color: '#00b894', size: 10 },
+    ink: { color: '#6c3483', size: 9 },
+    triangle: { color: '#0984e3', size: 8 },
+    examPaper: { color: '#dfe6e9', size: 7 },
+    lunchBox: { color: '#f39c12', size: 10 },
+    waterBalloon: { color: '#74b9ff', size: 9 },
+    firecracker: { color: '#ff7675', size: 11 },
+    laser: { color: '#f9ca24', size: 6 },
+    iceStick: { color: '#81ecec', size: 8 }
+  };
+  const bulletStyle = bulletStyles[weaponId] || { color: '#ffa502', size: 8 };
+
   const bullet = {
     x, y,
     vx: Math.cos(angle) * CONFIG.bulletSpeed * weapon.speed * masteryBonuses.speed,
@@ -3975,7 +4215,10 @@ function createSingleBullet(x, y, angle, weapon, orbit = false, weaponId = null)
     pierce: (weapon.pierce || 0) + (gameState.extraPierce || 0) + masteryBonuses.pierce,
     hitEnemies: new Set(),
     life: 1,
-    isCrit // 记录是否暴击
+    isCrit, // 记录是否暴击
+    color: bulletStyle.color,
+    size: bulletStyle.size,
+    trailColor: bulletStyle.color
   };
   gameState.bullets.push(bullet);
   return bullet;
@@ -4199,15 +4442,33 @@ function activateBomb(damage) {
 
 function updateActiveEffects() {
   const now = Date.now();
-  let effectsChanged = false;
   
   for (const [effect, data] of Object.entries(gameState.activeEffects)) {
     if (data.active && now > data.endTime) {
       data.active = false;
       if (effect === 'speed') data.multiplier = 1;
       if (effect === 'exp') data.multiplier = 1;
-      effectsChanged = true;
+      if (effect === 'slow') data.multiplier = 1;
+      if (effect === 'burn') {
+        data.damage = 0;
+        data.lastTick = 0;
+      }
     }
+  }
+
+  if (gameState.activeEffects.burn.active && now - (gameState.activeEffects.burn.lastTick || 0) >= 1000) {
+    const burnDamage = gameState.activeEffects.burn.damage || 0;
+    if (burnDamage > 0 && !gameState.activeEffects.shield.active) {
+      const damage = applyDefense(burnDamage);
+      gameState.player.hp -= damage;
+      gameState.damageTaken += damage;
+      gameState.noDamageRun = false;
+      FloatingText.add(gameState.player.x, gameState.player.y - 30, `-${Math.floor(damage)}`, '#ff6b6b', 14);
+      if (gameState.player.hp <= 0) {
+        gameOver();
+      }
+    }
+    gameState.activeEffects.burn.lastTick = now;
   }
   
   // 更新效果指示器UI
@@ -4237,58 +4498,69 @@ function updateEffectIndicators() {
     const remaining = Math.ceil((gameState.activeEffects.exp.endTime - now) / 1000);
     effects.push({ type: 'exp', icon: '📝', name: '双倍经验', time: remaining });
   }
+  if (gameState.activeEffects.slow.active) {
+    const remaining = Math.ceil((gameState.activeEffects.slow.endTime - now) / 1000);
+    effects.push({ type: 'slow', icon: '🧊', name: '减速', time: remaining });
+  }
+  if (gameState.activeEffects.silence.active) {
+    const remaining = Math.ceil((gameState.activeEffects.silence.endTime - now) / 1000);
+    effects.push({ type: 'silence', icon: '🔇', name: '沉默', time: remaining });
+  }
+  if (gameState.activeEffects.burn.active) {
+    const remaining = Math.ceil((gameState.activeEffects.burn.endTime - now) / 1000);
+    effects.push({ type: 'burn', icon: '🔥', name: '灼烧', time: remaining });
+  }
   
-  container.innerHTML = effects.map(e => `
+  const html = effects.map(e => `
     <div class="effect-badge ${e.type}">
       <span>${e.icon}</span>
       <span>${e.name}</span>
       <span style="margin-left:auto;color:#888;">${e.time}s</span>
     </div>
   `).join('');
+
+  if (container.dataset.lastHtml !== html) {
+    container.innerHTML = html;
+    container.dataset.lastHtml = html;
+  }
 }
 
 function showEffectIndicator(text, color) {
-  const indicator = document.createElement('div');
-  indicator.style.cssText = `
-    position: fixed;
-    top: 30%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 24px;
-    font-weight: bold;
-    color: ${color};
-    text-shadow: 0 0 20px ${color};
-    pointer-events: none;
-    z-index: 1000;
-    animation: effectPulse 2s ease-out forwards;
-  `;
+  let indicator = document.getElementById('effectIndicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'effectIndicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 24px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0;
+    `;
+    document.body.appendChild(indicator);
+  }
+
+  indicator.style.color = color;
+  indicator.style.textShadow = `0 0 20px ${color}`;
+  indicator.style.animation = 'none';
   indicator.textContent = text;
-  document.body.appendChild(indicator);
-  
-  setTimeout(() => indicator.remove(), 2000);
+  void indicator.offsetWidth;
+  indicator.style.animation = 'effectPulse 2s ease-out forwards';
+
+  if (showEffectIndicator.timer) {
+    clearTimeout(showEffectIndicator.timer);
+  }
+  showEffectIndicator.timer = setTimeout(() => {
+    indicator.style.opacity = '0';
+  }, 2000);
 }
 
 function showFloatingText(x, y, text, color) {
-  // 转换为屏幕坐标
-  const screenX = x - camera.x;
-  const screenY = y - camera.y;
-  
-  const el = document.createElement('div');
-  el.style.cssText = `
-    position: absolute;
-    left: ${screenX}px;
-    top: ${screenY}px;
-    font-size: 16px;
-    font-weight: bold;
-    color: ${color};
-    pointer-events: none;
-    z-index: 100;
-    animation: floatUp 1s ease-out forwards;
-  `;
-  el.textContent = text;
-  document.getElementById('gameCanvas').parentElement.appendChild(el);
-  
-  setTimeout(() => el.remove(), 1000);
+  FloatingText.add(x, y, text, color, 16, 1000);
 }
 
 function createRageEffect() {
@@ -5058,24 +5330,7 @@ function showBossPhaseChange(boss) {
 }
 
 function showBossSkillEffect(x, y, text, color = '#ff6b6b') {
-  const effect = document.createElement('div');
-  effect.style.cssText = `
-    position: absolute;
-    left: ${x - camera.x}px;
-    top: ${y - camera.y}px;
-    font-size: 20px;
-    font-weight: bold;
-    color: ${color};
-    text-shadow: 0 0 10px ${color}, 0 0 20px ${color};
-    pointer-events: none;
-    z-index: 100;
-    animation: floatUp 1.5s ease-out forwards;
-    white-space: nowrap;
-  `;
-  effect.textContent = text;
-  document.getElementById('gameCanvas').parentElement.appendChild(effect);
-  
-  setTimeout(() => effect.remove(), 1500);
+  FloatingText.add(x, y, text, color, 20, 1500);
 }
 
 function updateBossHealthBar() {
@@ -5083,6 +5338,13 @@ function updateBossHealthBar() {
   if (!boss) {
     const existingBar = document.getElementById('bossHealthBar');
     if (existingBar) existingBar.remove();
+    updateBossHealthBar.lastRender = '';
+    updateBossHealthBar.lastUpdate = 0;
+    return;
+  }
+
+  const now = Date.now();
+  if (updateBossHealthBar.lastUpdate && now - updateBossHealthBar.lastUpdate < 100) {
     return;
   }
   
@@ -5113,7 +5375,7 @@ function updateBossHealthBar() {
   healthBar.style.borderColor = boss.color;
   healthBar.style.boxShadow = `0 0 20px ${boss.color}`;
   
-  healthBar.innerHTML = `
+  const markup = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:28px">${boss.emoji}</span>
@@ -5128,6 +5390,12 @@ function updateBossHealthBar() {
       <div style="width:${hpPercent}%;height:100%;background:linear-gradient(90deg,${boss.color},#ff6b6b);transition:width 0.3s;box-shadow:0 0 10px ${boss.color}"></div>
     </div>
   `;
+
+  if (markup !== updateBossHealthBar.lastRender) {
+    healthBar.innerHTML = markup;
+    updateBossHealthBar.lastRender = markup;
+  }
+  updateBossHealthBar.lastUpdate = now;
 }
 
 function updateHazardZones() {
@@ -5275,24 +5543,7 @@ function killBoss() {
 }
 
 function showRewardEffect(x, y, text, emoji) {
-  const effect = document.createElement('div');
-  effect.style.cssText = `
-    position: absolute;
-    left: ${x - camera.x}px;
-    top: ${y - camera.y - 50}px;
-    font-size: 18px;
-    font-weight: bold;
-    color: #ffd700;
-    text-shadow: 0 0 20px #ffd700;
-    pointer-events: none;
-    z-index: 100;
-    animation: rewardFloat 2s ease-out forwards;
-    text-align: center;
-  `;
-  effect.innerHTML = `<div style="font-size:32px">${emoji}</div><div>${text}</div>`;
-  document.getElementById('gameCanvas').parentElement.appendChild(effect);
-  
-  setTimeout(() => effect.remove(), 2000);
+  FloatingText.add(x, y - 20, `${emoji} ${text}`, '#ffd700', 18, 2000);
 }
 
 function applyBossReward(reward) {
@@ -5370,7 +5621,9 @@ function spawnItemAt(x, y, itemId) {
     id: itemId,
     emoji: item.emoji,
     color: item.color,
-    createdAt: Date.now()
+    life: 15000,
+    createdAt: Date.now(),
+    pulse: 0
   });
 }
 
@@ -5395,6 +5648,26 @@ function showBossDefeated() {
   setTimeout(() => msg.remove(), 2000);
 }
 
+function checkLevelUp() {
+  const player = gameState.player;
+  let leveledUp = false;
+
+  while (player.exp >= player.expToNext) {
+    player.exp -= player.expToNext;
+    player.level++;
+    player.expToNext = Math.floor(player.expToNext * 1.2);
+    player.hp = Math.min(player.maxHp, player.hp + 20);
+
+    VisualEffects.createLevelUpEffect(player.x, player.y);
+    FloatingText.add(player.x, player.y - 50, 'LEVEL UP!', '#2ed573', 24);
+    leveledUp = true;
+  }
+
+  if (leveledUp) {
+    showUpgradeModal();
+  }
+}
+
 function updateEnemies(deltaTime) {
   const player = gameState.player;
   const now = Date.now();
@@ -5417,6 +5690,31 @@ function updateEnemies(deltaTime) {
   }
   
   gameState.enemies = gameState.enemies.filter(enemy => {
+    if (enemy.dotActive && now > enemy.dotEndTime) {
+      enemy.dotActive = false;
+      enemy.dotDamage = 0;
+    }
+
+    if (enemy.blinded && now > enemy.blindEndTime) {
+      enemy.blinded = false;
+    }
+
+    if (enemy.dotActive && now > (enemy.lastDotTick || 0) + 500) {
+      enemy.hp -= enemy.dotDamage || 0;
+      enemy.lastDotTick = now;
+      if (enemy.dotDamage) {
+        FloatingText.add(enemy.x, enemy.y - 25, `-${enemy.dotDamage}`, '#8e44ad', 12);
+      }
+    }
+
+    // 击退优先于追击，让控场武器能真正把怪群推出去
+    if (enemy.knockback) {
+      updateEnemyKnockback(enemy, deltaTime);
+      if (enemy.knockback) {
+        return enemy.hp > 0;
+      }
+    }
+
     // 检查眩晕状态
     if (enemy.stunned) {
       if (now > enemy.stunEndTime) {
@@ -5470,9 +5768,18 @@ function updateEnemies(deltaTime) {
     }
     
     // 向玩家移动
-    const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-    enemy.x += Math.cos(angle) * enemy.speed;
-    enemy.y += Math.sin(angle) * enemy.speed;
+    let angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+    let moveSpeed = enemy.speed;
+    if (enemy.blinded) {
+      angle += Math.sin((now + enemy.x + enemy.y) / 120) * 0.9;
+      moveSpeed *= 0.72;
+      if (now % 700 < 50) {
+        FloatingText.add(enemy.x, enemy.y - enemy.size - 12, '📄', '#ecf0f1', 14);
+      }
+    }
+
+    enemy.x += Math.cos(angle) * moveSpeed;
+    enemy.y += Math.sin(angle) * moveSpeed;
     
     // 碰撞检测
     const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
@@ -5508,7 +5815,11 @@ function updateEnemies(deltaTime) {
 }
 
 function killEnemy(enemy, weaponId) {
-  const enemyType = ENEMY_TYPES[enemy.type];
+  const enemyType = ENEMY_TYPES[enemy.type] || {
+    name: '特殊敌人',
+    emoji: enemy.emoji || '❓',
+    color: enemy.color || '#ffa502'
+  };
   
   // 武器经验获取（击杀）
   if (weaponId) {
@@ -5582,28 +5893,9 @@ function killEnemy(enemy, weaponId) {
   
   // 增加怒气（精英怪给更多）
   addRage(enemy.isElite ? 15 : 5);
-  
-  // v1.6 增强连击系统
-  updateComboSystem();
-  
-  // 应用连击经验加成
-  const comboBonus = getComboExpBonus();
-  if (comboBonus > 0) {
-    const bonusExp = Math.floor(enemy.exp * comboBonus);
-    if (bonusExp > 0) {
-      gameState.expOrbs.push({
-        x: enemy.x + (Math.random() - 0.5) * 40,
-        y: enemy.y + (Math.random() - 0.5) * 40,
-        exp: bonusExp,
-        vx: (Math.random() - 0.5) * 2,
-        vy: (Math.random() - 0.5) * 2,
-        isBonus: true
-      });
-      // 性能优化：只有高连击时才显示连击奖励飘字
-      if (gameState.combo.count >= 20) {
-        FloatingText.add(enemy.x, enemy.y - 40, `+${bonusExp} 连击奖励!`, '#ffa502', 12);
-      }
-    }
+
+  if (typeof enemy.onDeath === 'function') {
+    enemy.onDeath();
   }
   
   // 暴走击杀统计
@@ -5648,6 +5940,99 @@ function killEnemy(enemy, weaponId) {
   gameState.kills++;
 }
 
+function explodePlayerBullet(bullet, x, y, primaryTarget = null) {
+  const radius = bullet.explosionRadius || (bullet.weaponId === 'firecracker' ? 90 : (bullet.weaponId === 'basketball' ? 110 : 70));
+  const splashDamage = bullet.damage * (bullet.explosionDamageScale || (bullet.weaponId === 'firecracker' ? 0.8 : (bullet.weaponId === 'basketball' ? 0.95 : 0.6)));
+  const shockwaveForce = bullet.knockbackBoost || (bullet.weaponId === 'basketball' ? 45 : 0);
+
+  VisualEffects.createExplosion(x, y, bullet.color || '#ffa502', bullet.weaponId === 'firecracker' ? 18 : (bullet.weaponId === 'basketball' ? 24 : 12));
+  if (bullet.weaponId === 'basketball') {
+    ScreenShake.shake(8, 180);
+    VisualEffects.createCritEffect(x, y);
+  }
+
+  gameState.enemies.forEach(enemy => {
+    if (enemy === primaryTarget) return;
+
+    const dist = Math.hypot(enemy.x - x, enemy.y - y);
+    if (dist > radius) return;
+
+    enemy.hp -= splashDamage;
+    if (shockwaveForce > 0) {
+      const angle = Math.atan2(enemy.y - y, enemy.x - x);
+      applyKnockback(enemy, { damage: splashDamage + shockwaveForce }, angle);
+    }
+    if (enemy.hp <= 0) {
+      killEnemy(enemy, bullet.weaponId);
+    }
+  });
+
+  if (gameState.boss) {
+    const distToBoss = Math.hypot(gameState.boss.x - x, gameState.boss.y - y);
+    if (distToBoss <= radius) {
+      gameState.boss.hp -= splashDamage * 0.5;
+      if (gameState.boss.hp <= 0) {
+        killBoss();
+      }
+    }
+  }
+}
+
+function spawnPlayerZone(type, x, y, options = {}) {
+  const zone = {
+    type,
+    x,
+    y,
+    radius: options.radius || 80,
+    damage: options.damage || 0,
+    slowMultiplier: options.slowMultiplier || 1,
+    color: options.color || '#8e44ad',
+    emoji: options.emoji || '',
+    createdAt: Date.now(),
+    endTime: Date.now() + (options.duration || 2500),
+    lastTick: 0,
+    sourceWeaponId: options.sourceWeaponId || null
+  };
+
+  gameState.playerZones.push(zone);
+  return zone;
+}
+
+function updatePlayerZones(deltaTime) {
+  const now = Date.now();
+
+  gameState.playerZones = gameState.playerZones.filter(zone => {
+    if (zone.endTime <= now) {
+      return false;
+    }
+
+    if (now - zone.lastTick >= 300) {
+      gameState.enemies.forEach(enemy => {
+        const dist = Math.hypot(enemy.x - zone.x, enemy.y - zone.y);
+        if (dist > zone.radius) return;
+
+        if (zone.damage > 0) {
+          enemy.hp -= zone.damage;
+          if (enemy.hp <= 0) {
+            killEnemy(enemy, zone.sourceWeaponId);
+          }
+        }
+
+        if (zone.slowMultiplier < 1) {
+          enemy.slowed = true;
+          enemy.slowEndTime = now + 500;
+          enemy.originalSpeed = enemy.originalSpeed || enemy.speed;
+          enemy.speed = enemy.originalSpeed * zone.slowMultiplier;
+        }
+      });
+
+      zone.lastTick = now;
+    }
+
+    return true;
+  });
+}
+
 // ==================== 子弹逻辑 ====================
 function updateBullets(deltaTime) {
   const player = gameState.player;
@@ -5676,6 +6061,9 @@ function updateBullets(deltaTime) {
       // 普通子弹
       bullet.x += bullet.vx;
       bullet.y += bullet.vy;
+      if (bullet.trailColor) {
+        VisualEffects.createTrail(bullet.x, bullet.y, bullet.trailColor, Math.max(2, (bullet.size || 8) * 0.35));
+      }
     }
     
     // 跳过敌人子弹
@@ -5725,6 +6113,16 @@ function updateBullets(deltaTime) {
         
         // 应用子弹特殊效果
         applyBulletEffects(bullet, enemy);
+
+        if (bullet.weaponId === 'triangle' && !bullet.hasSplit && bullet.hitEnemies.size >= 1 && bullet.pierce <= 1) {
+          bullet.hasSplit = true;
+          createBullet(bullet.x, bullet.y, Math.atan2(enemy.y - bullet.y, enemy.x - bullet.x) + 0.22, bullet.weapon, false, bullet.weaponId);
+          createBullet(bullet.x, bullet.y, Math.atan2(enemy.y - bullet.y, enemy.x - bullet.x) - 0.22, bullet.weapon, false, bullet.weaponId);
+        }
+
+        if (bullet.weapon?.explode) {
+          explodePlayerBullet(bullet, bullet.x, bullet.y, enemy);
+        }
         
         if (bullet.pierce <= 0) {
           hit = true;
@@ -5761,6 +6159,10 @@ function updateBullets(deltaTime) {
           size: 5
         });
         
+        if (bullet.weapon?.explode) {
+          explodePlayerBullet(bullet, bullet.x, bullet.y);
+        }
+
         if (bullet.pierce <= 0) {
           hit = true;
         } else {
@@ -5790,6 +6192,11 @@ function updateBullets(deltaTime) {
 
 // 处理子弹特殊效果
 function applyBulletEffects(bullet, enemy) {
+  if (bullet.weapon?.knockback || bullet.knockbackBoost) {
+    const angle = Math.atan2(enemy.y - bullet.y, enemy.x - bullet.x);
+    applyKnockback(enemy, { damage: bullet.damage + (bullet.knockbackBoost || 0) }, angle);
+  }
+
   // 眩晕效果
   if (bullet.stunChance && Math.random() < bullet.stunChance) {
     enemy.stunned = true;
@@ -5804,6 +6211,42 @@ function applyBulletEffects(bullet, enemy) {
     enemy.originalSpeed = enemy.originalSpeed || enemy.speed;
     enemy.speed = enemy.originalSpeed * 0.5;
     FloatingText.add(enemy.x, enemy.y - 30, '减速!', '#74b9ff', 14);
+  }
+
+  if (bullet.freezeEffect) {
+    enemy.stunned = true;
+    enemy.stunEndTime = Date.now() + 1500;
+    enemy.slowed = true;
+    enemy.slowEndTime = Date.now() + 1500;
+    enemy.originalSpeed = enemy.originalSpeed || enemy.speed;
+    enemy.speed = enemy.originalSpeed * 0.2;
+    FloatingText.add(enemy.x, enemy.y - 30, '冰冻!', '#74b9ff', 14);
+  }
+
+  if (bullet.blindEffect) {
+    enemy.blinded = true;
+    enemy.blindEndTime = Date.now() + 1800;
+    FloatingText.add(enemy.x, enemy.y - 30, '致盲!', '#ecf0f1', 14);
+  }
+
+  if (bullet.dotEffect) {
+    enemy.dotActive = true;
+    enemy.dotDamage = bullet.dotDamage || Math.max(3, Math.floor(bullet.damage * 0.15));
+    enemy.lastDotTick = Date.now();
+    enemy.dotEndTime = Date.now() + 2500;
+    FloatingText.add(enemy.x, enemy.y - 30, '染墨!', '#8e44ad', 14);
+
+    if (bullet.weaponId === 'ink') {
+      spawnPlayerZone('ink', enemy.x, enemy.y, {
+        radius: 75,
+        damage: Math.max(2, Math.floor(bullet.damage * 0.08)),
+        slowMultiplier: 0.7,
+        color: '#6c3483',
+        emoji: '🖊️',
+        duration: 2800,
+        sourceWeaponId: bullet.weaponId
+      });
+    }
   }
 }
 
@@ -5857,21 +6300,8 @@ function updateExpOrbs(deltaTime) {
 function gainExp(amount) {
   const player = gameState.player;
   player.exp += amount;
-  
-  if (player.exp >= player.expToNext) {
-    player.exp -= player.expToNext;
-    player.level++;
-    player.expToNext = Math.floor(player.expToNext * 1.2);
-    
-    // 升级恢复
-    player.hp = Math.min(player.maxHp, player.hp + 20);
-    
-    // 升级特效
-    VisualEffects.createLevelUpEffect(player.x, player.y);
-    FloatingText.add(player.x, player.y - 50, 'LEVEL UP!', '#2ed573', 24);
-    
-    showUpgradeModal();
-  }
+
+  checkLevelUp();
 }
 
 // ==================== 升级系统 ====================
@@ -5987,6 +6417,8 @@ function selectUpgrade(type, id) {
 
 // ==================== 粒子系统 ====================
 function updateParticles(deltaTime) {
+  const now = Date.now();
+
   // v1.7 性能优化：限制粒子数量
   const maxParticles = 150;
   if (gameState.particles.length > maxParticles) {
@@ -6022,7 +6454,7 @@ function updateParticles(deltaTime) {
       case 'float':
         // 上升效果
         p.y += p.vy;
-        p.x += Math.sin(Date.now() / 200 + p.y) * 0.5;
+        p.x += Math.sin(now / 200 + p.y) * 0.5;
         break;
         
       case 'flash':
@@ -6047,111 +6479,6 @@ function updateParticles(deltaTime) {
   
   // 更新背景效果
   BackgroundEffects.update();
-}
-
-// ==================== v1.6 增强连击系统 ====================
-function updateComboSystem() {
-  const now = Date.now();
-  const combo = gameState.combo;
-  
-  // 检查连击是否中断
-  if (combo.count > 0 && now - combo.lastKillTime > CONFIG.comboSystem.timeout) {
-    // 连击中断，记录最高连击
-    if (combo.count > combo.maxCombo) {
-      combo.maxCombo = combo.count;
-    }
-    // 显示连击结束
-    if (combo.count >= 10) {
-      FloatingText.add(gameState.player.x, gameState.player.y - 50, 
-        `连击结束! ${combo.count}`, '#ffa502', 18);
-    }
-    combo.count = 0;
-    combo.bonusMultiplier = 1;
-    document.getElementById('comboDisplay')?.classList.remove('active');
-  }
-  
-  // 增加连击数
-  combo.count++;
-  combo.lastKillTime = now;
-  
-  // 更新最高连击
-  if (combo.count > combo.maxCombo) {
-    combo.maxCombo = combo.count;
-    gameState.maxCombo = combo.count;
-  }
-  
-  // 计算连击加成
-  combo.bonusMultiplier = 1 + getComboExpBonus();
-  
-  // 显示连击UI
-  showComboUI();
-  
-  // 连击里程碑提示
-  const milestones = [10, 20, 50, 100];
-  if (milestones.includes(combo.count)) {
-    FloatingText.add(gameState.player.x, gameState.player.y - 60, 
-      `${combo.count} 连击! 🔥`, '#ff3838', 24);
-    ScreenShake.shake(3, 200);
-    AudioSystem.play('combo_milestone');
-  }
-}
-
-// 预计算连击阈值数组，避免每次调用都重新计算
-const COMBO_THRESHOLDS = [100, 50, 20, 10, 5];
-
-function getComboExpBonus() {
-  const count = gameState.combo.count;
-  const bonuses = CONFIG.comboSystem.bonusExp;
-  
-  // 使用预计算的阈值数组
-  for (const threshold of COMBO_THRESHOLDS) {
-    if (count >= threshold) {
-      return bonuses[threshold];
-    }
-  }
-  return 0;
-}
-
-function showComboUI() {
-  const display = document.getElementById('comboDisplay');
-  if (!display) return;
-  
-  const count = gameState.combo.count;
-  if (count >= 5) {
-    const bonus = Math.floor(getComboExpBonus() * 100);
-    display.innerHTML = `<span class="combo-count">x${count}</span> <span class="combo-bonus">+${bonus}%EXP</span>`;
-    display.classList.add('active');
-    
-    // 根据连击数改变颜色
-    if (count >= 100) {
-      display.style.color = '#ff3838';
-      display.style.textShadow = '0 0 20px #ff3838';
-    } else if (count >= 50) {
-      display.style.color = '#ffa502';
-      display.style.textShadow = '0 0 15px #ffa502';
-    } else if (count >= 20) {
-      display.style.color = '#2ed573';
-      display.style.textShadow = '0 0 10px #2ed573';
-    }
-  }
-}
-
-// 旧函数兼容（保持原有调用）
-function updateCombo(deltaTime) {
-  // 新版连击系统已在killEnemy中处理
-  const combo = gameState.combo;
-  if (combo.count > 0 && Date.now() - combo.lastKillTime > CONFIG.comboSystem.timeout) {
-    if (combo.count > combo.maxCombo) {
-      combo.maxCombo = combo.count;
-    }
-    combo.count = 0;
-    combo.bonusMultiplier = 1;
-    document.getElementById('comboDisplay')?.classList.remove('active');
-  }
-}
-
-function showCombo() {
-  // 新版由updateComboSystem处理
 }
 
 // ==================== 渲染 ====================
@@ -6294,10 +6621,39 @@ function render() {
     ctx.fill();
     ctx.restore();
   });
+
+  gameState.playerZones.forEach(zone => {
+    const lifeProgress = Math.max(0, (zone.endTime - Date.now()) / Math.max(1, zone.endTime - zone.createdAt));
+    const alpha = 0.12 + lifeProgress * 0.18;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+    ctx.fillStyle = zone.color;
+    ctx.fill();
+
+    ctx.globalAlpha = alpha + 0.15;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = zone.color;
+    ctx.stroke();
+
+    if (zone.emoji) {
+      ctx.globalAlpha = alpha + 0.2;
+      ctx.font = '18px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(zone.emoji, zone.x, zone.y);
+    }
+    ctx.restore();
+  });
   
   // 绘制敌人
   gameState.enemies.forEach(enemy => {
-    const enemyType = ENEMY_TYPES[enemy.type];
+    const enemyType = ENEMY_TYPES[enemy.type] || {
+      emoji: enemy.emoji || '❓',
+      color: enemy.color || '#ffa502'
+    };
     
     // 血条
     const hpPercent = enemy.hp / enemy.maxHp;
@@ -6351,7 +6707,7 @@ function render() {
     ctx.font = `${enemy.size}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(enemyType.emoji, enemy.x, enemy.y);
+    ctx.fillText(enemy.emoji || enemyType.emoji, enemy.x, enemy.y);
   });
   
   // 绘制危险区域
@@ -6506,12 +6862,13 @@ function render() {
   
   // 绘制子弹
   gameState.bullets.forEach(bullet => {
+    if (bullet.isEnemyBullet) return;
     ctx.beginPath();
-    ctx.arc(bullet.x, bullet.y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffa502';
+    ctx.arc(bullet.x, bullet.y, bullet.size || 8, 0, Math.PI * 2);
+    ctx.fillStyle = bullet.color || '#ffa502';
     ctx.fill();
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#ffa502';
+    ctx.shadowBlur = bullet.size || 10;
+    ctx.shadowColor = bullet.color || '#ffa502';
   });
   ctx.shadowBlur = 0;
   
@@ -6603,28 +6960,52 @@ function drawGrid() {
 }
 
 // ==================== UI更新 ====================
+// 性能优化：UI更新节流
+let uiLastUpdate = 0;
+const UI_UPDATE_INTERVAL = 50; // 每50ms更新一次UI
+
 function updateUI() {
+  const now = Date.now();
+  if (now - uiLastUpdate < UI_UPDATE_INTERVAL) return;
+  uiLastUpdate = now;
+  
   const player = gameState.player;
   
   // HP
-  const hpPercent = (player.hp / player.maxHp) * 100;
-  document.getElementById('hpBar').style.width = hpPercent + '%';
-  document.getElementById('hpText').textContent = `${Math.ceil(player.hp)}/${player.maxHp}`;
+  const hpBar = document.getElementById('hpBar');
+  const hpText = document.getElementById('hpText');
+  if (hpBar && hpText) {
+    const hpPercent = (player.hp / player.maxHp) * 100;
+    hpBar.style.width = hpPercent + '%';
+    hpText.textContent = `${Math.ceil(player.hp)}/${player.maxHp}`;
+  }
   
   // EXP
-  const expPercent = (player.exp / player.expToNext) * 100;
-  document.getElementById('expBar').style.width = expPercent + '%';
-  document.getElementById('levelText').textContent = `Lv.${player.level}`;
+  const expBar = document.getElementById('expBar');
+  const levelText = document.getElementById('levelText');
+  if (expBar && levelText) {
+    const expPercent = (player.exp / player.expToNext) * 100;
+    expBar.style.width = expPercent + '%';
+    levelText.textContent = `Lv.${player.level}`;
+  }
   
   // 怒气
   if (player.rage > 0 || player.rageActive) {
-    document.getElementById('rageBarContainer').style.opacity = '1';
-    document.getElementById('rageBar').style.width = player.rageActive ? '100%' : player.rage + '%';
-    document.getElementById('rageText').textContent = player.rageActive ? '暴走中!' : Math.floor(player.rage) + '%';
+    const rageBarContainer = document.getElementById('rageBarContainer');
+    const rageBar = document.getElementById('rageBar');
+    const rageText = document.getElementById('rageText');
+    if (rageBarContainer && rageBar && rageText) {
+      rageBarContainer.style.opacity = '1';
+      rageBar.style.width = player.rageActive ? '100%' : player.rage + '%';
+      rageText.textContent = player.rageActive ? '暴走中!' : Math.floor(player.rage) + '%';
+    }
   }
   
   // 等级
-  document.getElementById('levelPill').textContent = `Lv.${player.level}`;
+  const levelPill = document.getElementById('levelPill');
+  if (levelPill) {
+    levelPill.textContent = `Lv.${player.level}`;
+  }
   
   // 波次
   const wavePill = document.getElementById('wavePill');
@@ -6633,13 +7014,19 @@ function updateUI() {
   }
   
   // 时间
-  const elapsed = Math.floor((Date.now() - gameState.startTime) / 1000);
-  const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
-  const seconds = (elapsed % 60).toString().padStart(2, '0');
-  document.getElementById('timePill').textContent = `${minutes}:${seconds}`;
+  const timePill = document.getElementById('timePill');
+  if (timePill) {
+    const elapsed = Math.floor((Date.now() - gameState.startTime) / 1000);
+    const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const seconds = (elapsed % 60).toString().padStart(2, '0');
+    timePill.textContent = `${minutes}:${seconds}`;
+  }
   
   // 击杀
-  document.getElementById('killPill').textContent = `击败: ${gameState.kills}`;
+  const killPill = document.getElementById('killPill');
+  if (killPill) {
+    killPill.textContent = `击败: ${gameState.kills}`;
+  }
 }
 
 function updateSkillBar() {
