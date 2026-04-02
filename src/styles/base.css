@@ -1,0 +1,45 @@
+:root {
+  --shell-ink: #10131f;
+  --shell-panel: #161b2d;
+  --shell-panel-alt: #1e2540;
+  --shell-paper: #f4f7fb;
+  --shell-red: #ff4d5a;
+  --shell-orange: #ff9f1a;
+  --shell-yellow: #ffd43b;
+  --shell-blue: #33a1fd;
+  --shell-green: #2ed573;
+  --shell-muted: #92a0bd;
+  --shell-border: rgba(255, 255, 255, 0.12);
+  --shell-shadow: 0 20px 60px rgba(0, 0, 0, 0.38);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(255, 159, 26, 0.15), transparent 28%),
+    radial-gradient(circle at 80% 10%, rgba(51, 161, 253, 0.18), transparent 20%),
+    linear-gradient(180deg, #12172a 0%, #090b12 100%);
+  color: var(--shell-paper);
+  overflow: hidden;
+  touch-action: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+[hidden] {
+  display: none !important;
+}

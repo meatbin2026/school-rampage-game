@@ -1,0 +1,42 @@
+export const ACHIEVEMENT_CATALOG = {
+  firstBlood: { id: 'firstBlood', name: '初露锋芒', description: '首次击杀敌人', emoji: '🩸' },
+  killer10: { id: 'killer10', name: '百人斩', description: '累计击杀100人', emoji: '💯' },
+  killer100: { id: 'killer100', name: '千人斩', description: '累计击杀1000人', emoji: '👑' },
+  survivor: { id: 'survivor', name: '生存专家', description: '单局存活5分钟', emoji: '⏱️' },
+  level10: { id: 'level10', name: '成长达人', description: '单局达到10级', emoji: '📈' },
+  level20: { id: 'level20', name: '满级大佬', description: '单局达到20级', emoji: '🏆' },
+  combo50: { id: 'combo50', name: '连击大师', description: '达成50连击', emoji: '🔥' },
+  bossSlayer: { id: 'bossSlayer', name: 'Boss克星', description: '击败教导主任', emoji: '👨‍🏫' },
+  noDamage: { id: 'noDamage', name: '无伤通关', description: '单局不受伤存活3分钟', emoji: '🛡️' },
+  collector: { id: 'collector', name: '收藏家', description: '解锁所有武器', emoji: '📦' },
+  rageMode: { id: 'rageMode', name: '暴走狂魔', description: '暴走状态下击杀50人', emoji: '😡' },
+  veteran: { id: 'veteran', name: '老兵', description: '累计游戏10次', emoji: '🎖️' },
+  waveMaster: { id: 'waveMaster', name: '波次大师', description: '存活超过10波', emoji: '🌊' },
+  eliteHunter: { id: 'eliteHunter', name: '精英猎手', description: '击败50个精英怪', emoji: '👑' },
+  bomberKiller: { id: 'bomberKiller', name: '拆弹专家', description: '击败100个炸弹人', emoji: '💣' },
+  timeStopper: { id: 'timeStopper', name: '时间掌控者', description: '使用时间停止10次', emoji: '⏱️' },
+  killer500: { id: 'killer500', name: '万人斩', description: '累计击杀5000人', emoji: '💀' },
+  killer10000: { id: 'killer10000', name: '屠戮者', description: '累计击杀10000人', emoji: '🔱' },
+  survivor10: { id: 'survivor10', name: '生存王者', description: '单局存活10分钟', emoji: '⏰' },
+  combo100: { id: 'combo100', name: '连击之神', description: '达成100连击', emoji: '⚡' },
+  combo200: { id: 'combo200', name: '连击传说', description: '达成200连击', emoji: '🌟' },
+  bossSlayerAll: { id: 'bossSlayerAll', name: 'Boss终结者', description: '击败所有Boss', emoji: '🏆' },
+  wave20: { id: 'wave20', name: '波次传奇', description: '存活超过20波', emoji: '🌊' },
+  wave30: { id: 'wave30', name: '无尽生存', description: '存活超过30波', emoji: '🌀' },
+  level30: { id: 'level30', name: '超越极限', description: '单局达到30级', emoji: '🚀' },
+  level50: { id: 'level50', name: '神级存在', description: '单局达到50级', emoji: '👑' },
+  rage100: { id: 'rage100', name: '狂暴之神', description: '暴走状态下击杀100人', emoji: '😤' },
+  rage200: { id: 'rage200', name: '暴走传说', description: '暴走状态下击杀200人', emoji: '💢' },
+  noDamage5: { id: 'noDamage5', name: '完美生存', description: '单局不受伤存活5分钟', emoji: '💎' },
+  eliteHunter100: { id: 'eliteHunter100', name: '精英克星', description: '击败100个精英怪', emoji: '👹' },
+  eliteHunter500: { id: 'eliteHunter500', name: '精英终结者', description: '击败500个精英怪', emoji: '👺' },
+  veteran50: { id: 'veteran50', name: '传说老兵', description: '累计游戏50次', emoji: '🎖️' },
+  veteran100: { id: 'veteran100', name: '百战不殆', description: '累计游戏100次', emoji: '🏅' },
+  collectorAll: { id: 'collectorAll', name: '全武器大师', description: '解锁所有武器并达到满级', emoji: '📚' },
+  rich: { id: 'rich', name: '富豪', description: '单局获得10000分', emoji: '💰' },
+  richSuper: { id: 'richSuper', name: '亿万富翁', description: '单局获得50000分', emoji: '💎' }
+};
+
+export function getAchievementById(id) {
+  return ACHIEVEMENT_CATALOG[id] || null;
+}

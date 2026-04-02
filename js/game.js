@@ -1093,6 +1093,7 @@ const SaveSystem = {
   save(data) {
     try {
       localStorage.setItem(this.key, JSON.stringify(data));
+      window.dispatchEvent(new CustomEvent('schoolrampage:meta-updated'));
     } catch (e) {
       console.error('存档失败:', e);
     }
@@ -3058,6 +3059,7 @@ let gameState = {
   
   // 道具状态
   items: [],
+  collectedItems: [],
   activeEffects: {
     magnet: { active: false, endTime: 0 },
     shield: { active: false, endTime: 0 },
@@ -3207,6 +3209,7 @@ function init() {
   
   // UI事件
   setupUI();
+  showStartScreen();
   
   // 初始化移动端控制
   if (window.MobileControls) {
@@ -3228,26 +3231,31 @@ function resizeCanvas() {
 }
 
 function setupUI() {
-  // 角色选择
-  document.querySelectorAll('.character-card').forEach(card => {
-    card.addEventListener('click', () => {
+  // 使用事件委托支持新壳子中的动态重渲染
+  document.addEventListener('click', e => {
+    const card = e.target.closest('.character-card');
+    if (card) {
       document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       gameState.player.character = card.dataset.character;
-    });
+    }
+
+    if (e.target.id === 'startBtn') {
+      startGame();
+    }
+
+    if (e.target.id === 'restartBtn') {
+      document.getElementById('gameOverModal').classList.remove('active');
+      showStartScreen();
+    }
+
+    if (e.target.id === 'muteBtn') {
+      AudioSystem.toggleMute();
+    }
   });
-  
-  // 开始按钮
-  document.getElementById('startBtn').addEventListener('click', startGame);
   
   // 暂停按钮
   document.getElementById('pauseBtn').addEventListener('click', togglePause);
-  
-  // 重新开始
-  document.getElementById('restartBtn').addEventListener('click', () => {
-    document.getElementById('gameOverModal').classList.remove('active');
-    showStartScreen();
-  });
   
   // 初始化版本管理器
   if (window.VersionManager) {
@@ -3265,6 +3273,11 @@ function startGame() {
   // 重置成就会话缓存
   SaveSystem.resetSession();
   
+  const selectedLoadout = window.AppShell?.getSelectedLoadout?.() || {};
+  if (selectedLoadout.character) {
+    gameState.player.character = selectedLoadout.character;
+  }
+  const primaryWeaponId = selectedLoadout.primaryWeapon || 'textbook';
   const charConfig = CHARACTERS[gameState.player.character];
   
   // 初始化玩家状态
@@ -3284,7 +3297,7 @@ function startGame() {
   
   // 重置武器
   gameState.weapons = {
-    textbook: { level: 1, unlocked: true },
+    textbook: { level: primaryWeaponId === 'textbook' ? 1 : 0, unlocked: primaryWeaponId === 'textbook' },
     chalk: { level: 0, unlocked: false },
     ruler: { level: 0, unlocked: false },
     basketball: { level: 0, unlocked: false },
@@ -3297,6 +3310,10 @@ function startGame() {
     waterBalloon: { level: 0, unlocked: false },
     firecracker: { level: 0, unlocked: false }
   };
+  if (gameState.weapons[primaryWeaponId]) {
+    gameState.weapons[primaryWeaponId].level = 1;
+    gameState.weapons[primaryWeaponId].unlocked = true;
+  }
   
   // 重置超武
   gameState.superWeapons = {};
@@ -3322,6 +3339,7 @@ function startGame() {
   
   // 重置道具和效果
   gameState.items = [];
+  gameState.collectedItems = [];
   gameState.activeEffects = {
     magnet: { active: false, endTime: 0 },
     shield: { active: false, endTime: 0 },
@@ -3361,7 +3379,7 @@ function startGame() {
   
   // v1.6 重置双武器系统
   gameState.dualWeapon = {
-    primary: null,
+    primary: primaryWeaponId,
     secondary: null,
     current: 'primary',
     lastSwitchTime: 0
@@ -3410,79 +3428,44 @@ function startGame() {
   }
   
   updateSkillBar();
+  if (window.LegacyGameBridge?.showBattle) {
+    window.LegacyGameBridge.showBattle({
+      character: gameState.player.character,
+      weapon: primaryWeaponId
+    });
+  }
 }
 
 function showStartScreen() {
   document.getElementById('startScreen').classList.remove('hidden');
+  document.getElementById('gameOverModal').classList.remove('active');
   document.getElementById('hud').style.display = 'none';
   document.getElementById('skillBar').style.display = 'none';
   document.getElementById('hint').style.display = 'none';
   document.getElementById('mobileControls').style.display = 'none';
   gameState.running = false;
   
-  // 加载并显示存档数据
-  updateStartScreenStats();
-  
   // 显示新手引导（首次游玩）
   if (window.TutorialSystem && TutorialSystem.shouldShowTutorial()) {
     setTimeout(() => TutorialSystem.start(), 500);
   }
-}
 
-function updateStartScreenStats() {
-  const saveData = SaveSystem.load();
-  
-  // 更新统计显示
-  const statsHtml = `
-    <div class="save-stats">
-      <div class="stat-item">
-        <span class="stat-label">最高分</span>
-        <span class="stat-value">${saveData.highScore}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">总击杀</span>
-        <span class="stat-value">${saveData.totalKills}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">游戏次数</span>
-        <span class="stat-value">${saveData.totalGames}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">成就解锁</span>
-        <span class="stat-value">${Object.keys(saveData.achievements).length}/${Object.keys(ACHIEVEMENTS).length}</span>
-      </div>
-    </div>
-  `;
-  
-  const statsContainer = document.getElementById('saveStats');
-  if (statsContainer) {
-    statsContainer.innerHTML = statsHtml;
+  if (window.LegacyGameBridge?.showHome) {
+    window.LegacyGameBridge.showHome();
   }
-  
-  // 更新成就列表
-  updateAchievementsList(saveData);
 }
 
-function updateAchievementsList(saveData) {
-  const container = document.getElementById('achievementsList');
-  if (!container) return;
-  
-  const html = Object.entries(ACHIEVEMENTS).map(([id, achievement]) => {
-    const unlocked = saveData.achievements[id];
-    return `
-      <div class="achievement-item ${unlocked ? 'unlocked' : 'locked'}">
-        <span class="achievement-emoji">${achievement.emoji}</span>
-        <div class="achievement-info">
-          <div class="achievement-name">${achievement.name}</div>
-          <div class="achievement-desc">${achievement.description}</div>
-        </div>
-        ${unlocked ? '<span class="achievement-check">✓</span>' : ''}
-      </div>
-    `;
-  }).join('');
-  
-  container.innerHTML = html;
-}
+window.LegacyGameData = {
+  getSaveData() {
+    return SaveSystem.load();
+  },
+  getLeaderboard() {
+    return Leaderboard.getTop(5);
+  },
+  getCurrentTitleId() {
+    return TitleSystem.getCurrentTitle();
+  }
+};
 
 function updateGameOverStats(saveData) {
   // 可以在这里更新游戏结束界面显示更多统计
@@ -3641,6 +3624,27 @@ function gameOver() {
   }
   
   document.getElementById('gameOverModal').classList.add('active');
+  if (window.LegacyGameBridge?.showResults) {
+    const unlockedAchievements = Array.from(SaveSystem.sessionUnlocked);
+    const unlockedTitles = TitleSystem.getUnlockedTitles()
+      .filter(title => title.requiresAchievement && unlockedAchievements.includes(title.requiresAchievement))
+      .map(title => title.id);
+
+    window.LegacyGameBridge.showResults({
+      time: `${minutes}:${seconds}`,
+      kills: gameState.kills,
+      level: gameState.player.level,
+      wave: gameState.wave,
+      items: gameState.collectedItems.slice(0, 8),
+      primaryWeapon: gameState.dualWeapon.primary,
+      secondaryWeapon: gameState.dualWeapon.secondary,
+      bossesDefeated: gameState.bossDefeated.slice(),
+      weaponsUnlocked: weaponsUnlocked,
+      talentPointsEarned: newTalentPoints,
+      newAchievements: unlockedAchievements,
+      newTitles: unlockedTitles
+    });
+  }
 }
 
 // 显示排行榜排名
@@ -4321,6 +4325,7 @@ function updateItems(deltaTime) {
 function pickupItem(item) {
   const itemConfig = ITEMS[item.id];
   const now = Date.now();
+  gameState.collectedItems.push(item.id);
   
   // 播放拾取音效 (视觉反馈)
   showFloatingText(item.x, item.y, itemConfig.name, itemConfig.color);
