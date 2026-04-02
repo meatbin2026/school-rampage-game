@@ -3445,11 +3445,6 @@ function showStartScreen() {
   document.getElementById('mobileControls').style.display = 'none';
   gameState.running = false;
   
-  // 显示新手引导（首次游玩）
-  if (window.TutorialSystem && TutorialSystem.shouldShowTutorial()) {
-    setTimeout(() => TutorialSystem.start(), 500);
-  }
-
   if (window.LegacyGameBridge?.showHome) {
     window.LegacyGameBridge.showHome();
   }

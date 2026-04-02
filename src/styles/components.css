@@ -852,6 +852,8 @@ body[data-scene="home"] .home-panels {
   inset: auto 50% 24px auto;
   transform: translateX(0);
   max-width: 240px;
+  display: none;
+  pointer-events: none;
 }
 
 .results-grid {
@@ -995,6 +997,12 @@ body[data-scene="home"] .home-panels {
 
   .item-slot {
     min-width: 132px;
+  }
+}
+
+@media (max-width: 1024px) and (orientation: portrait) {
+  body.mobile .orientation-hint {
+    display: block;
   }
 }
 
