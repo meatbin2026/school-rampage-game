@@ -19,6 +19,13 @@
   pointer-events: auto;
 }
 
+body[data-scene="home"] #startScreen {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 159, 26, 0.14), transparent 30%),
+    radial-gradient(circle at 15% 10%, rgba(255, 77, 90, 0.16), transparent 26%),
+    radial-gradient(circle at 85% 12%, rgba(51, 161, 253, 0.14), transparent 24%);
+}
+
 .shell-grid {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
@@ -28,7 +35,7 @@
 
 body[data-scene="home"] .shell-grid {
   grid-template-columns: 1fr;
-  max-width: 460px;
+  max-width: 440px;
   margin: 0 auto;
   min-height: auto;
 }

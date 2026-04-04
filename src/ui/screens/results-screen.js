@@ -8,6 +8,7 @@ export function renderResultsScreen() {
         <div class="results-title">${SCREEN_COPY.results.title}</div>
         <p>${SCREEN_COPY.results.description}</p>
       </div>
+      <div class="results-story-strip">SURVIVE · BUILD · BOSS · GROW</div>
       <div class="results-grid">
         <div><span>主武器</span><strong>待结算</strong></div>
         <div><span>副武器</span><strong>战斗中形成</strong></div>

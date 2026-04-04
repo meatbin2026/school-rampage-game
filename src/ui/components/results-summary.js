@@ -24,9 +24,10 @@ export function renderResultsSummary(result, state) {
       <div class="results-title">${state.selectedCharacterLabel} 完成本局出击</div>
       <p>主武器 ${state.selectedWeaponLabel} 贯穿全局，下面是这次闯关的核心数据。</p>
     </div>
+    <div class="results-story-strip">${insights.performanceTier} · 第 ${result.wave} 波收官 · ${result.kills} 击败</div>
     <div class="summary-head">
       <span class="summary-title">${state.selectedCharacterLabel}</span>
-      <span class="summary-weapon">${insights.performanceTier}</span>
+      <span class="summary-weapon results-rank-banner">${insights.performanceTier}</span>
     </div>
     <div class="results-grid">
       <div><span>存活时间</span><strong>${result.time}</strong></div>
@@ -67,7 +68,7 @@ export function renderResultsSummary(result, state) {
       <div class="results-loot">
         <div class="lobby-title">本局拾取</div>
         <div class="loot-strip">
-          ${pickedItems.map((item) => `<span class="threat-chip">${item.emoji} ${item.name}</span>`).join('')}
+          ${pickedItems.map((item) => `<span class="threat-chip loot-chip">${item.emoji} ${item.name}</span>`).join('')}
         </div>
       </div>
     ` : ''}
@@ -75,8 +76,8 @@ export function renderResultsSummary(result, state) {
       <div class="results-loot">
         <div class="lobby-title">本局成长</div>
         <div class="loot-strip">
-          ${unlockedAchievements.map((achievement) => `<span class="threat-chip">${achievement.emoji} ${achievement.name}</span>`).join('')}
-          ${unlockedTitles.map((title) => `<span class="threat-chip">${title.emoji} ${title.name}</span>`).join('')}
+          ${unlockedAchievements.map((achievement) => `<span class="threat-chip loot-chip">${achievement.emoji} ${achievement.name}</span>`).join('')}
+          ${unlockedTitles.map((title) => `<span class="threat-chip loot-chip">${title.emoji} ${title.name}</span>`).join('')}
         </div>
       </div>
     ` : ''}

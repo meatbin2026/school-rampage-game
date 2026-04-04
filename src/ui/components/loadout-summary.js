@@ -3,6 +3,7 @@ export function renderLoadoutSummary(state) {
     <section class="loadout-column">
       <div class="panel-label">出击摘要</div>
       <div class="build-summary-card" id="selectedLoadoutSummary">
+        <div class="summary-alert-strip">MISSION READY · WAVE 10 BOSS · RANDOM DROP ONLY</div>
         <div class="summary-head">
           <div>
             <div class="summary-title">${state.selectedCharacterLabel}</div>

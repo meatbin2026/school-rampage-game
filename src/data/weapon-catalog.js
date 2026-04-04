@@ -7,7 +7,10 @@ export const WEAPON_CATALOG = {
     damage: 1,
     speed: 1,
     maxLevel: 8,
-    description: '扔出课本攻击敌人'
+    description: '扔出课本攻击敌人',
+    impact: '稳准',
+    rhythm: '中速',
+    lane: '主线输出'
   },
   chalk: {
     id: 'chalk',
@@ -17,7 +20,10 @@ export const WEAPON_CATALOG = {
     damage: 0.8,
     speed: 1.2,
     maxLevel: 8,
-    description: '散射粉笔攻击'
+    description: '散射粉笔攻击',
+    impact: '覆盖',
+    rhythm: '快频',
+    lane: '扇面清怪'
   },
   ruler: {
     id: 'ruler',
@@ -37,7 +43,10 @@ export const WEAPON_CATALOG = {
     damage: 2,
     speed: 0.6,
     maxLevel: 8,
-    description: '篮球爆炸伤害'
+    description: '篮球爆炸伤害',
+    impact: '重击',
+    rhythm: '慢狠',
+    lane: '范围爆发'
   },
   eraser: {
     id: 'eraser',
@@ -77,7 +86,10 @@ export const WEAPON_CATALOG = {
     damage: 1.8,
     speed: 1.8,
     maxLevel: 8,
-    description: '穿透多个敌人'
+    description: '穿透多个敌人',
+    impact: '穿线',
+    rhythm: '高速',
+    lane: '直线清场'
   },
   examPaper: {
     id: 'examPaper',

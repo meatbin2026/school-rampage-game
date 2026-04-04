@@ -3831,27 +3831,37 @@ function updatePlayerAttack(deltaTime) {
   if (gameState.activeEffects.silence.active) {
     return;
   }
-  
-  // v1.7 性能优化：只攻击当前装备的武器
-  const currentWeaponId = getCurrentWeaponId();
-  
-  // 如果没有当前武器，不执行攻击
-  if (!currentWeaponId || !gameState.weapons[currentWeaponId]?.unlocked) {
-    return;
+
+  const equippedWeaponIds = [];
+  const dual = gameState.dualWeapon;
+
+  if (CONFIG.dualWeapon.enabled && dual.primary) {
+    equippedWeaponIds.push(dual.primary);
+    if (dual.secondary && dual.secondary !== dual.primary) {
+      equippedWeaponIds.push(dual.secondary);
+    }
+  } else {
+    const fallbackWeaponId = getCurrentWeaponId();
+    if (fallbackWeaponId) {
+      equippedWeaponIds.push(fallbackWeaponId);
+    }
   }
-  
-  const weaponData = gameState.weapons[currentWeaponId];
-  const weapon = WEAPONS[currentWeaponId];
-  
-  // 检查武器是否有效
-  if (!weapon || !weaponData || weaponData.level <= 0) return;
-  
-  const fireRate = 1 / (player.attackSpeed * weapon.speed * (player.rageActive ? 2 : 1));
-  
-  if (!weaponData.lastFire || Date.now() - weaponData.lastFire > fireRate * 1000) {
-    fireWeapon(currentWeaponId, weapon, weaponData);
-    weaponData.lastFire = Date.now();
-  }
+
+  equippedWeaponIds.forEach((weaponId) => {
+    const weaponData = gameState.weapons[weaponId];
+    const weapon = WEAPONS[weaponId];
+
+    if (!weaponId || !weaponData?.unlocked || !weapon || weaponData.level <= 0) {
+      return;
+    }
+
+    const fireRate = 1 / (player.attackSpeed * weapon.speed * (player.rageActive ? 2 : 1));
+
+    if (!weaponData.lastFire || Date.now() - weaponData.lastFire > fireRate * 1000) {
+      fireWeapon(weaponId, weapon, weaponData);
+      weaponData.lastFire = Date.now();
+    }
+  });
 }
 
 function fireWeapon(weaponId, weapon, weaponData) {
@@ -4133,6 +4143,14 @@ function setSecondaryWeapon(weaponId) {
   dual.secondary = weaponId;
   FloatingText.add(gameState.player.x, gameState.player.y - 40, `副武器: ${WEAPONS[weaponId].name}`, '#2ed573', 14);
   return true;
+}
+
+function tryAssignSecondaryWeapon(weaponId) {
+  const dual = gameState.dualWeapon;
+  if (!CONFIG.dualWeapon.enabled || !weaponId) return false;
+  if (dual.primary === weaponId || dual.secondary === weaponId) return false;
+  if (dual.secondary) return false;
+  return Boolean(setSecondaryWeapon(weaponId));
 }
 
 // ==================== v1.6 击退系统 ====================
@@ -5503,6 +5521,7 @@ function killBoss() {
           if (!gameState.weapons[reward].unlocked) {
             gameState.weapons[reward].unlocked = true;
             gameState.weapons[reward].level = 1;
+            tryAssignSecondaryWeapon(reward);
             showRewardEffect(boss.x, boss.y, `解锁: ${WEAPONS[reward].name}`, WEAPONS[reward].emoji);
           }
         } else {
@@ -6328,13 +6347,30 @@ function showUpgradeModal() {
     const upgrade = availableUpgrades.splice(idx, 1)[0];
     options.push(upgrade);
   }
+
+  const getUpgradeTone = (type) => {
+    switch (type) {
+      case 'weapon':
+        return { label: '武器强化', className: 'weapon' };
+      case 'stat':
+        return { label: '属性强化', className: 'stat' };
+      case 'special':
+        return { label: '特殊能力', className: 'special' };
+      default:
+        return { label: '强化', className: 'neutral' };
+    }
+  };
   
   const container = document.getElementById('upgradeOptions');
   container.innerHTML = options.map(upgrade => `
-    <div class="upgrade-card" onclick="selectUpgrade('${upgrade.type}', '${upgrade.id}')">
-      <div class="upgrade-icon">${upgrade.emoji}</div>
+    <div class="upgrade-card upgrade-card-${getUpgradeTone(upgrade.type).className}" onclick="selectUpgrade('${upgrade.type}', '${upgrade.id}')">
+      <div class="upgrade-card-top">
+        <div class="upgrade-badge">${getUpgradeTone(upgrade.type).label}</div>
+        <div class="upgrade-icon">${upgrade.emoji}</div>
+      </div>
       <div class="upgrade-name">${upgrade.name}</div>
       <div class="upgrade-desc">${upgrade.desc}</div>
+      <div class="upgrade-footer">立即拿下</div>
     </div>
   `).join('');
   
@@ -6348,6 +6384,7 @@ function selectUpgrade(type, id) {
     case 'weapon':
       if (!gameState.weapons[id].unlocked) {
         gameState.weapons[id].unlocked = true;
+        tryAssignSecondaryWeapon(id);
       }
       gameState.weapons[id].level++;
       break;

@@ -11,10 +11,22 @@ export function renderHomeScreen(state) {
           <button class="mini-ghost-btn" id="muteBtn">🔊</button>
         </div>
 
+        <div class="hero-sticker-row">
+          ${HOME_COPY.sellPoints.map((point) => `<span class="hero-sticker">${point}</span>`).join('')}
+        </div>
+
         <div class="mobile-title-art">
           <div class="poster-burst"></div>
-          <div class="poster-character">${state.selectedCharacter === 'badboy' ? '😎' : state.selectedCharacter === 'nerd' ? '🤓' : '🏃'}</div>
+          <div class="poster-grid"></div>
+          <div class="poster-warning warning-left">BOSS</div>
+          <div class="poster-warning warning-right">${state.buildTags[0]}</div>
+          <div class="poster-character-wrap">
+            <div class="poster-character-glow"></div>
+            <div class="poster-character">${state.selectedCharacter === 'badboy' ? '😎' : state.selectedCharacter === 'nerd' ? '🤓' : '🏃'}</div>
+            <div class="poster-weapon-stamp">${state.selectedWeaponLabel}</div>
+          </div>
           <div class="poster-copy">
+            <div class="poster-kicker">${HOME_COPY.subline}</div>
             <h1>${HOME_COPY.title}</h1>
             <p>${HOME_COPY.description}</p>
           </div>
@@ -35,8 +47,11 @@ export function renderHomeScreen(state) {
           </div>
         </div>
 
-        <button class="arcade-button primary mobile-start-btn" data-action="go-loadout">开始游戏</button>
+        <button class="arcade-button primary mobile-start-btn" data-action="go-loadout">开始暴走</button>
         <p class="mobile-home-tip">${SCREEN_COPY.home.tip}</p>
+        <div class="home-marquee" aria-hidden="true">
+          <div class="home-marquee-track">${HOME_COPY.marquee}</div>
+        </div>
       </section>
 
       ${renderHomeSpotlight(state)}
